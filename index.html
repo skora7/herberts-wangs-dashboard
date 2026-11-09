@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dynasty Panel</title>
+  <style>
+    :root { color-scheme: dark; --bg:#101816; --panel:#182420; --line:#33453d; --muted:#a8bcb2; --lime:#d6f886; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:#f2f6ed; font:15px/1.5 system-ui,sans-serif; }
+    main { width:min(1120px, calc(100% - 32px)); margin:auto; padding:40px 0; }
+    header { background:linear-gradient(115deg,#203b2d,#16241e); padding:clamp(20px,5vw,48px); border:1px solid var(--line); border-radius:22px; }
+    .eyebrow { color:var(--lime); font-weight:750; text-transform:uppercase; letter-spacing:.14em; font-size:.75rem; }
+    h1 { font-size:clamp(2rem,6vw,4.2rem); line-height:1.05; margin:10px 0 14px; letter-spacing:-.045em; overflow-wrap:anywhere; }
+    h2 { margin:0; font-size:1.55rem; }
+    h3 { margin:0 0 12px; }
+    p { margin:5px 0; color:var(--muted); }
+    nav, .filters { display:flex; flex-wrap:wrap; gap:8px; align-items:end; }
+    nav { margin:24px 0; }
+    button, select { font:inherit; color:inherit; background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:9px 12px; }
+    button { cursor:pointer; }
+    button[aria-current="page"] { color:#162310; background:var(--lime); border-color:var(--lime); font-weight:700; }
+    button:hover, select:hover { border-color:var(--lime); }
+    .heading { display:flex; flex-wrap:wrap; align-items:end; justify-content:space-between; gap:15px; margin-bottom:14px; }
+    label { display:grid; gap:4px; color:var(--muted); font-size:.82rem; }
+    .table { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
+    table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+    th, td { padding:12px 16px; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap; }
+    th { color:var(--muted); font-size:.8rem; }
+    tr:last-child td { border-bottom:0; }
+    th button, .team { background:none; border:0; border-radius:3px; padding:0; text-align:left; }
+    .team { color:var(--lime); }
+    .team:hover { text-decoration:underline; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:12px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:15px; }
+    .result { display:flex; justify-content:space-between; gap:12px; padding:6px 0; }
+    .result + .result { border-top:1px solid var(--line); }
+    .assets { display:grid; grid-template-columns:minmax(0, 3fr) minmax(0, 2fr); gap:18px; }
+    @media (max-width:760px) { .assets { grid-template-columns:minmax(0, 1fr); } }
+    .stack { display:grid; gap:12px; align-content:start; min-width:0; }
+    .stack .card { min-width:0; }
+    .pick-years table { table-layout:fixed; }
+    .pick-years th:first-child { width:82px; }
+    .pick-years td:last-child { white-space:normal; overflow-wrap:anywhere; }
+    .analytics { margin-top:24px; }
+    .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,205px),1fr)); gap:12px; margin:0; }
+    .metrics dt { color:var(--muted); }
+    .metrics dd { margin:2px 0 0; font-size:1.6rem; font-weight:700; font-variant-numeric:tabular-nums; }
+    .value-chart { display:block; width:100%; max-width:850px; height:auto; margin:auto; }
+    .value-chart text { fill:var(--muted); font-size:14px; }
+    .value-chart line { stroke:var(--line); }
+    .value-chart circle { fill:var(--lime); stroke:var(--bg); stroke-width:2; cursor:pointer; opacity:.7; }
+    .value-chart circle:is(:hover, :focus-visible, [aria-pressed="true"]) { opacity:1; stroke:#fff; }
+    .draft-scroll { overflow-x:auto; padding-bottom:10px; scrollbar-width:thin; scrollbar-color:#52645a transparent; }
+    .draft-board { display:grid; grid-template-columns:repeat(var(--teams), minmax(78px, 1fr)); gap:8px; }
+    .draft-label { position:relative; height:96px; }
+    .draft-label span { position:absolute; bottom:2px; left:8px; width:98px; transform:rotate(-45deg);
+      transform-origin:bottom left; color:var(--muted); font-size:.72rem; font-weight:650; line-height:1.15;
+      overflow-wrap:anywhere; pointer-events:none; }
+    .draft-label:is(:hover, :focus-visible) span { color:var(--lime); }
+    .draft-pick { display:grid; place-items:center; aspect-ratio:1; min-width:0; padding:6px;
+      border-radius:14px; background:var(--panel); border:1px solid var(--line);
+      text-align:center; font-size:clamp(.66rem, 1vw, .81rem); line-height:1.2; overflow-wrap:anywhere; }
+    .draft-pick[data-highlighted] { color:#162310; background:var(--lime); border-color:var(--lime); }
+    .draft-scroll[data-fade-left] { --fade-left:transparent; --start:18px; }
+    .draft-scroll[data-fade-right] { --fade-right:transparent; --end:calc(100% - 18px); }
+    .draft-scroll { mask-image:linear-gradient(to right, var(--fade-left, black), black var(--start, 0px),
+      black var(--end, 100%), var(--fade-right, black)); }
+    footer { margin-top:24px; font-size:.82rem; color:var(--muted); }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Dynasty Panel</div>
+    <h1 id="league"></h1>
+    <p id="season"></p>
+  </header>
+  <nav aria-label="Dashboard views">
+    <button data-view="standings" aria-current="page">Standings</button>
+    <button data-view="matchups">Matchups</button>
+    <button data-view="teams">Teams</button>
+    <button data-view="draft">Draft</button>
+    <button data-view="playoffs">Playoffs</button>
+    <button data-view="values" hidden>Trade Values</button>
+  </nav>
+  <section id="content" aria-label="Dashboard data"></section>
+  <footer id="updated"></footer>
+</main>
+<script id="league-data" type="application/json">{"name": "Herbert's Wangs", "season": 2026, "teams": [{"id": 1, "name": "Lisan Al-Caleb", "wins": 10, "losses": 6, "ties": 0, "pf": 1148.1, "pa": 971.2, "lineup": [{"slot": "QB", "player": {"name": "Caleb Williams", "rank": "QB20", "total": 115.34, "average": 19.223333333333333}}, {"slot": "RB", "player": {"name": "Bijan Robinson", "rank": "RB3", "total": 180.0, "average": 20.0}}, {"slot": "RB", "player": {"name": "Bucky Irving", "rank": "RB7", "total": 159.1, "average": 17.677777777777777}}, {"slot": "WR", "player": {"name": "Zay Flowers", "rank": "WR12", "total": 127.5, "average": 15.9375}}, {"slot": "WR", "player": {"name": "Nico Collins", "rank": "WR24", "total": 91.6, "average": 15.266666666666666}}, {"slot": "TE", "player": {"name": "Trey McBride", "rank": "TE1", "total": 162.8, "average": 18.08888888888889}}, {"slot": "WRT", "player": {"name": "George Pickens", "rank": "WR20", "total": 104.3, "average": 13.0375}}, {"slot": "WRT", "player": {"name": "Chase Brown", "rank": "RB19", "total": 101.4, "average": 12.675}}, {"slot": "WRTQ", "player": {"name": "Dak Prescott", "rank": "QB7", "total": 172.44, "average": 19.16}}], "bench": [{"name": "Tyler Shough", "rank": "QB11", "total": 151.64, "average": 18.955}, {"name": "Jonah Coleman", "rank": "RB33", "total": 62.9, "average": 12.58}, {"name": "Caleb Douglas", "rank": "WR56", "total": 60.6, "average": 12.120000000000001}, {"name": "Alvin Kamara", "rank": "RB26", "total": 73.7, "average": 10.528571428571428}, {"name": "Jaylen Waddle", "rank": "WR33", "total": 82.0, "average": 9.11111111111111}, {"name": "Darnell Washington", "rank": "TE24", "total": 62.4, "average": 7.8}, {"name": "Terrance Ferguson", "rank": "TE53", "total": 19.3, "average": 6.433333333333334}, {"name": "Cooper Kupp", "rank": "WR61", "total": 57.8, "average": 6.422222222222222}, {"name": "Efton Chism III", "rank": "WR69", "total": 50.84, "average": 6.355}, {"name": "Rashid Shaheed", "rank": "WR83", "total": 42.2, "average": 6.028571428571429}, {"name": "Samaje Perine", "rank": "RB46", "total": 44.9, "average": 5.6125}, {"name": "Charlie Kolar", "rank": "TE50", "total": 24.2, "average": 4.033333333333333}, {"name": "Tyler Goodson", "rank": "RB73", "total": 22.6, "average": 3.2285714285714286}, {"name": "Matt Hibner", "rank": "TE52", "total": 19.5, "average": 2.4375}, {"name": "Cyrus Allen", "rank": "WR137", "total": 11.5, "average": 1.4375}, {"name": "Tua Tagovailoa", "rank": "QB56", "total": 0.36, "average": 0.36}, {"name": "Jayden Higgins", "rank": "WR7992.0", "total": null, "average": null}, {"name": "Ricky Pearsall", "rank": "WR7992.0", "total": null, "average": null}, {"name": "Tyreek Hill", "rank": null, "total": null, "average": null}], "analytics": {"average": 143.5125, "starterAverage": 151.06666666666666, "variance": 766.6473071428572}}, {"id": 2, "name": "bclues", "wins": 8, "losses": 8, "ties": 0, "pf": 1069.9, "pa": 1032.64, "lineup": [{"slot": "QB", "player": {"name": "Trevor Lawrence", "rank": "QB12", "total": 151.18, "average": 18.8975}}, {"slot": "RB", "player": {"name": "Chuba Hubbard", "rank": "RB10", "total": 146.6, "average": 18.325}}, {"slot": "RB", "player": {"name": "Bhayshul Tuten", "rank": "RB15", "total": 127.2, "average": 15.9}}, {"slot": "WR", "player": {"name": "CeeDee Lamb", "rank": "WR2", "total": 201.8, "average": 22.422222222222224}}, {"slot": "WR", "player": {"name": "Ja'Marr Chase", "rank": "WR7", "total": 159.7, "average": 19.9625}}, {"slot": "TE", "player": {"name": "T.J. Hockenson", "rank": "TE17", "total": 78.5, "average": 11.214285714285714}}, {"slot": "WRT", "player": {"name": "Derrick Henry", "rank": "RB11", "total": 142.28, "average": 15.80888888888889}}, {"slot": "WRT", "player": {"name": "Luther Burden III", "rank": "WR10", "total": 136.3, "average": 15.144444444444446}}, {"slot": "WRTQ", "player": {"name": "Tank Dell", "rank": "WR104", "total": 26.0, "average": 13.0}}], "bench": [{"name": "Kyler Murray", "rank": "QB31", "total": 76.58, "average": 12.763333333333334}, {"name": "Jameis Winston", "rank": "QB30", "total": 78.22, "average": 11.174285714285714}, {"name": "Tanner McKee", "rank": "QB38", "total": 32.12, "average": 10.706666666666665}, {"name": "Tyler Allgeier", "rank": "RB22", "total": 90.7, "average": 10.077777777777778}, {"name": "Jordan Addison", "rank": "WR70", "total": 49.1, "average": 8.183333333333334}, {"name": "Dylan Sampson", "rank": "RB63", "total": 31.4, "average": 7.85}, {"name": "Zach Charbonnet", "rank": "RB86", "total": 15.5, "average": 7.75}, {"name": "Jordan Mason", "rank": "RB77", "total": 20.7, "average": 6.8999999999999995}, {"name": "Greg Dulcich", "rank": "TE30", "total": 53.0, "average": 6.625}, {"name": "A.J. Brown", "rank": "WR112", "total": 19.1, "average": 6.366666666666667}, {"name": "Eli Raridon", "rank": "TE31", "total": 50.5, "average": 6.3125}, {"name": "Oronde Gadsden", "rank": "TE35", "total": 42.4, "average": 5.3}, {"name": "Brian Thomas Jr.", "rank": "WR93", "total": 33.7, "average": 4.2125}, {"name": "Travis Hunter", "rank": "DB73", "total": 19.3, "average": 2.4125}, {"name": "Kaytron Allen", "rank": "RB93", "total": 9.6, "average": 1.3714285714285714}, {"name": "Anthony Richardson Sr.", "rank": "QB55", "total": 0.72, "average": 0.72}], "analytics": {"average": 133.7375, "starterAverage": 150.67484126984127, "variance": 628.9074785714289}}, {"id": 3, "name": "Davis Chu (Erin Lu)", "wins": 12, "losses": 4, "ties": 0, "pf": 1116.14, "pa": 974.28, "lineup": [{"slot": "QB", "player": {"name": "Joe Burrow", "rank": "QB1", "total": 205.14, "average": 25.6425}}, {"slot": "RB", "player": {"name": "Kenneth Walker III", "rank": "RB2", "total": 196.4, "average": 24.55}}, {"slot": "RB", "player": {"name": "Javonte Williams", "rank": "RB5", "total": 159.6, "average": 17.733333333333334}}, {"slot": "WR", "player": {"name": "Tee Higgins", "rank": "WR6", "total": 159.8, "average": 19.975}}, {"slot": "WR", "player": {"name": "Christian Watson", "rank": "WR3", "total": 176.9, "average": 19.655555555555555}}, {"slot": "TE", "player": {"name": "Michael Mayer", "rank": "TE11", "total": 81.8, "average": 9.088888888888889}}, {"slot": "WRT", "player": {"name": "Tony Pollard", "rank": "RB16", "total": 116.5, "average": 14.5625}}, {"slot": "WRT", "player": {"name": "Emeka Egbuka", "rank": "WR35", "total": 78.0, "average": 11.142857142857142}}, {"slot": "WRTQ", "player": {"name": "Lamar Jackson", "rank": "QB29", "total": 80.08, "average": 16.016}}], "bench": [{"name": "Daniel Jones", "rank": "QB27", "total": 91.48, "average": 10.164444444444445}, {"name": "Jaylin Noel", "rank": "WR47", "total": 66.7, "average": 9.528571428571428}, {"name": "Hunter Henry", "rank": "TE13", "total": 80.1, "average": 8.899999999999999}, {"name": "Courtland Sutton", "rank": "WR52", "total": 63.6, "average": 7.066666666666666}, {"name": "Kenny Gainwell", "rank": "RB32", "total": 63.6, "average": 7.066666666666666}, {"name": "Jahan Dotson", "rank": "WR53", "total": 63.3, "average": 7.033333333333333}, {"name": "AJ Barner", "rank": "TE23", "total": 62.8, "average": 6.977777777777778}, {"name": "Mark Andrews", "rank": "TE25", "total": 58.7, "average": 6.522222222222222}, {"name": "Kendre Miller", "rank": "RB52", "total": 38.6, "average": 6.433333333333334}, {"name": "Alec Pierce", "rank": "WR134", "total": 12.2, "average": 6.1}, {"name": "Marvin Harrison Jr.", "rank": "WR90", "total": 37.5, "average": 5.357142857142857}, {"name": "Tyson Bagent", "rank": "QB44", "total": 15.16, "average": 5.053333333333334}, {"name": "Tyjae Spears", "rank": "RB67", "total": 27.1, "average": 4.516666666666667}, {"name": "Jaydon Blue", "rank": "RB120", "total": 1.9, "average": 0.95}, {"name": "Jaylen Wright", "rank": "RB108", "total": 4.1, "average": 0.6833333333333332}, {"name": "Elijah Arroyo", "rank": "TE100", "total": 2.7, "average": 0.45}, {"name": "Adam Randall", "rank": "RB8991.0", "total": null, "average": null}, {"name": "Brandon Aiyuk", "rank": "WR7992.0", "total": null, "average": null}, {"name": "Chris Brazzell II", "rank": "WR7992.0", "total": null, "average": null}], "analytics": {"average": 139.5175, "starterAverage": 158.3666349206349, "variance": 667.5635928571427}}, {"id": 4, "name": "WHO GIBBS DAT GOOD D?!", "wins": 12, "losses": 4, "ties": 0, "pf": 1125.12, "pa": 1087.7, "lineup": [{"slot": "QB", "player": {"name": "Brock Purdy", "rank": "QB6", "total": 176.3, "average": 22.0375}}, {"slot": "RB", "player": {"name": "Jahmyr Gibbs", "rank": "RB1", "total": 209.2, "average": 26.15}}, {"slot": "RB", "player": {"name": "Ashton Jeanty", "rank": "RB13", "total": 139.3, "average": 15.47777777777778}}, {"slot": "WR", "player": {"name": "Chris Olave", "rank": "WR9", "total": 141.4, "average": 17.675}}, {"slot": "WR", "player": {"name": "Jameson Williams", "rank": "WR19", "total": 105.7, "average": 13.2125}}, {"slot": "TE", "player": {"name": "Tucker Kraft", "rank": "TE8", "total": 90.4, "average": 10.044444444444444}}, {"slot": "WRT", "player": {"name": "DJ Moore", "rank": "WR66", "total": 52.9, "average": 10.58}}, {"slot": "WRT", "player": {"name": "Blake Corum", "rank": "RB20", "total": 94.6, "average": 10.511111111111111}}, {"slot": "WRTQ", "player": {"name": "Kirk Cousins", "rank": "QB5", "total": 180.3, "average": 20.033333333333335}}], "bench": [{"name": "Drew Lock", "rank": "QB34", "total": 46.78, "average": 15.593333333333334}, {"name": "Jacoby Brissett", "rank": "QB19", "total": 118.16, "average": 14.77}, {"name": "Joe Milton", "rank": "QB45", "total": 13.16, "average": 13.16}, {"name": "Malik Washington", "rank": "WR39", "total": 75.8, "average": 9.475}, {"name": "J.J. McCarthy", "rank": "QB36", "total": 34.98, "average": 8.745}, {"name": "Omarion Hampton", "rank": "RB30", "total": 68.2, "average": 8.525}, {"name": "Antonio Williams", "rank": "WR58", "total": 60.4, "average": 7.55}, {"name": "Chig Okonkwo", "rank": "TE33", "total": 44.9, "average": 7.483333333333333}, {"name": "Kimani Vidal", "rank": "RB50", "total": 43.8, "average": 5.475}, {"name": "Ted Hurst III", "rank": "WR92", "total": 33.8, "average": 3.755555555555555}, {"name": "Kaleb Johnson", "rank": "RB71", "total": 23.2, "average": 3.314285714285714}, {"name": "Troy Franklin", "rank": "WR111", "total": 19.5, "average": 2.1666666666666665}, {"name": "Jauan Jennings", "rank": "WR138", "total": 11.4, "average": 1.9000000000000001}, {"name": "Mac Jones", "rank": "QB67", "total": -0.5, "average": -0.25}, {"name": "Justin Fields", "rank": "QB69", "total": -2.1, "average": -1.05}, {"name": "Carson Beck", "rank": "QB999.0", "total": null, "average": null}, {"name": "Isaac Guerendo", "rank": "RB7992.0", "total": null, "average": null}, {"name": "Jalen McMillan", "rank": "WR228", "total": null, "average": null}, {"name": "Trey Benson", "rank": "RB8991.0", "total": null, "average": null}], "analytics": {"average": 140.64, "starterAverage": 145.72166666666666, "variance": 167.09645714285716}}, {"id": 5, "name": "beej542", "wins": 0, "losses": 16, "ties": 0, "pf": 650.68, "pa": 1001.48, "lineup": [{"slot": "QB", "player": {"name": "Michael Penix Jr.", "rank": "QB24", "total": 102.26, "average": 14.608571428571429}}, {"slot": "RB", "player": {"name": "Cam Skattebo", "rank": "RB28", "total": 70.4, "average": 10.057142857142859}}, {"slot": "RB", "player": {"name": "Emmett Johnson", "rank": "RB36", "total": 60.8, "average": 7.6}}, {"slot": "WR", "player": {"name": "Denzel Boston", "rank": "WR21", "total": 102.7, "average": 11.411111111111111}}, {"slot": "WR", "player": {"name": "Romeo Doubs", "rank": "WR59", "total": 58.1, "average": 9.683333333333334}}, {"slot": "TE", "player": {"name": "Colston Loveland", "rank": "TE10", "total": 83.3, "average": 9.255555555555555}}, {"slot": "WRT", "player": {"name": "Keon Coleman", "rank": "WR48", "total": 66.7, "average": 9.528571428571428}}, {"slot": "WRT", "player": {"name": "Pat Bryant", "rank": "WR73", "total": 47.5, "average": 9.5}}, {"slot": "WRTQ", "player": {"name": "Khalil Shakir", "rank": "WR49", "total": 66.4, "average": 9.485714285714286}}], "bench": [{"name": "Jaxson Dart", "rank": "QB39", "total": 27.4, "average": 13.7}, {"name": "Jalon Daniels", "rank": "QB35", "total": 40.04, "average": 8.008}, {"name": "Kayshon Boutte", "rank": "WR54", "total": 62.9, "average": 7.8625}, {"name": "Tre' Harris", "rank": "WR75", "total": 47.2, "average": 6.742857142857143}, {"name": "Malachi Fields", "rank": "WR64", "total": 53.8, "average": 6.725}, {"name": "Keaton Mitchell", "rank": "RB44", "total": 50.1, "average": 6.2625}, {"name": "Michael Pittman Jr.", "rank": "WR122", "total": 15.9, "average": 5.3}, {"name": "Isaiah Williams", "rank": "WR81", "total": 43.4, "average": 4.822222222222222}, {"name": "Evan Engram", "rank": "TE37", "total": 39.9, "average": 4.433333333333334}, {"name": "Xavier Legette", "rank": "WR149", "total": 8.4, "average": 4.2}, {"name": "Chris Bell", "rank": "WR102", "total": 29.2, "average": 3.65}, {"name": "Ja'Kobi Lane", "rank": "WR115", "total": 17.9, "average": 3.5799999999999996}, {"name": "Fernando Mendoza", "rank": "QB52", "total": 2.22, "average": 2.22}, {"name": "Devontez Walker", "rank": "WR117", "total": 17.5, "average": 2.1875}, {"name": "CJ Donaldson", "rank": "RB91", "total": 11.1, "average": 1.5857142857142856}, {"name": "Zavion Thomas", "rank": "WR129", "total": 13.5, "average": 1.5}, {"name": "Joe Fagnano", "rank": "QB50", "total": 2.64, "average": 1.32}, {"name": "Will Kacmarek", "rank": "TE82", "total": 7.0, "average": 0.875}, {"name": "LeQuint Allen Jr.", "rank": "RB113", "total": 3.0, "average": 0.375}, {"name": "Cade Klubnik", "rank": "QB8991.0", "total": null, "average": null}], "analytics": {"average": 81.335, "starterAverage": 91.13, "variance": 252.7446571428572}}, {"id": 6, "name": "TMerc22", "wins": 9, "losses": 7, "ties": 0, "pf": 1076.94, "pa": 1065.34, "lineup": [{"slot": "QB", "player": {"name": "Josh Allen", "rank": "QB2", "total": 192.82, "average": 27.545714285714286}}, {"slot": "RB", "player": {"name": "Christian McCaffrey", "rank": "RB4", "total": 166.7, "average": 20.8375}}, {"slot": "RB", "player": {"name": "Aaron Jones Sr.", "rank": "RB23", "total": 79.8, "average": 11.4}}, {"slot": "WR", "player": {"name": "Malik Nabers", "rank": "WR11", "total": 129.8, "average": 16.225}}, {"slot": "WR", "player": {"name": "Stefon Diggs", "rank": "WR25", "total": 90.3, "average": 12.9}}, {"slot": "TE", "player": {"name": "Travis Kelce", "rank": "TE6", "total": 99.3, "average": 12.4125}}, {"slot": "WRT", "player": {"name": "Jalen Coker", "rank": "WR31", "total": 86.0, "average": 12.285714285714286}}, {"slot": "WRT", "player": {"name": "Deebo Samuel Sr.", "rank": "WR57", "total": 60.4, "average": 12.08}}, {"slot": "WRTQ", "player": {"name": "Bryce Young", "rank": "QB9", "total": 152.58, "average": 19.0725}}], "bench": [{"name": "Aaron Rodgers", "rank": "QB17", "total": 123.14, "average": 15.3925}, {"name": "Dalton Kincaid", "rank": "TE14", "total": 79.1, "average": 11.299999999999999}, {"name": "Keenan Allen", "rank": "WR34", "total": 81.1, "average": 10.1375}, {"name": "Rachaad White", "rank": "RB29", "total": 69.7, "average": 9.957142857142857}, {"name": "Xavier Hutchinson", "rank": "WR50", "total": 66.3, "average": 8.2875}, {"name": "Shedeur Sanders", "rank": "QB43", "total": 22.76, "average": 7.586666666666667}, {"name": "J.K. Dobbins", "rank": "RB34", "total": 62.5, "average": 6.944444444444445}, {"name": "Jadarian Price", "rank": "RB62", "total": 31.5, "average": 6.3}, {"name": "Cade Otton", "rank": "TE34", "total": 44.1, "average": 4.9}, {"name": "Tyrone Tracy Jr.", "rank": "RB60", "total": 31.9, "average": 4.557142857142857}, {"name": "George Holani", "rank": "RB55", "total": 36.5, "average": 4.055555555555555}, {"name": "Corey Kiner", "rank": "RB59", "total": 32.0, "average": 3.5555555555555554}, {"name": "Jack Bech", "rank": "WR116", "total": 17.7, "average": 3.54}, {"name": "Sione Vaki", "rank": "RB68", "total": 26.9, "average": 3.3625}, {"name": "Jayden Reed", "rank": "WR155", "total": 6.4, "average": 3.2}, {"name": "Sean Tucker", "rank": "RB78", "total": 20.0, "average": 2.857142857142857}, {"name": "Jalen Royals", "rank": "WR108", "total": 20.3, "average": 2.5375}, {"name": "Elijah Sarratt", "rank": "WR180", "total": 2.3, "average": 2.3}, {"name": "Isiah Pacheco", "rank": "RB7992.0", "total": null, "average": null}], "analytics": {"average": 134.6175, "starterAverage": 144.75892857142858, "variance": 793.3511357142856}}, {"id": 7, "name": "put a girl on", "wins": 10, "losses": 6, "ties": 0, "pf": 1090.42, "pa": 833.22, "lineup": [{"slot": "QB", "player": {"name": "Jared Goff", "rank": "QB13", "total": 149.36, "average": 18.67}}, {"slot": "RB", "player": {"name": "Kyren Williams", "rank": "RB6", "total": 159.1, "average": 17.677777777777777}}, {"slot": "RB", "player": {"name": "D'Andre Swift", "rank": "RB8", "total": 153.8, "average": 17.08888888888889}}, {"slot": "WR", "player": {"name": "Tetairoa McMillan", "rank": "WR13", "total": 124.5, "average": 15.5625}}, {"slot": "WR", "player": {"name": "Justin Jefferson", "rank": "WR30", "total": 86.4, "average": 14.4}}, {"slot": "TE", "player": {"name": "Pat Freiermuth", "rank": "TE15", "total": 79.0, "average": 9.875}}, {"slot": "WRT", "player": {"name": "Jonathan Taylor", "rank": "RB9", "total": 153.6, "average": 17.066666666666666}}, {"slot": "WRT", "player": {"name": "Michael Wilson", "rank": "WR15", "total": 120.68, "average": 13.408888888888889}}, {"slot": "WRTQ", "player": {"name": "Bo Nix", "rank": "QB15", "total": 134.8, "average": 14.97777777777778}}], "bench": [{"name": "Geno Smith", "rank": "QB16", "total": 133.52, "average": 14.835555555555556}, {"name": "Juwan Johnson", "rank": "TE16", "total": 78.9, "average": 9.8625}, {"name": "KC Concepcion Jr.", "rank": "WR29", "total": 88.4, "average": 9.822222222222223}, {"name": "Jakobi Meyers", "rank": "WR40", "total": 75.6, "average": 9.45}, {"name": "Emanuel Wilson", "rank": "RB25", "total": 74.8, "average": 9.35}, {"name": "Terry McLaurin", "rank": "WR76", "total": 46.0, "average": 9.2}, {"name": "Dalton Schultz", "rank": "TE21", "total": 71.4, "average": 8.925}, {"name": "Woody Marks", "rank": "RB27", "total": 70.9, "average": 8.8625}, {"name": "Kyle Pitts Sr.", "rank": "TE22", "total": 71.0, "average": 7.888888888888889}, {"name": "Devin Singletary", "rank": "RB51", "total": 39.4, "average": 7.88}, {"name": "Mason Taylor", "rank": "TE32", "total": 46.7, "average": 6.671428571428572}, {"name": "Jake Ferguson", "rank": "TE29", "total": 54.6, "average": 6.066666666666666}, {"name": "Dohnte Meyers", "rank": "WR82", "total": 42.8, "average": 5.35}, {"name": "Colby Parkinson", "rank": "TE42", "total": 35.6, "average": 5.085714285714286}, {"name": "Tank Bigsby", "rank": "RB82", "total": 17.1, "average": 4.275}, {"name": "Isaac TeSlaa", "rank": "WR98", "total": 31.6, "average": 3.95}, {"name": "Seth McGowan", "rank": "RB58", "total": 32.7, "average": 3.6333333333333337}, {"name": "Drew Allar", "rank": null, "total": null, "average": null}, {"name": "James Conner", "rank": "RB8991.0", "total": null, "average": null}], "analytics": {"average": 136.3025, "starterAverage": 138.7275, "variance": 533.1160500000002}}, {"id": 8, "name": "Ohio Skora", "wins": 12, "losses": 4, "ties": 0, "pf": 1120.22, "pa": 970.99, "lineup": [{"slot": "QB", "player": {"name": "Drake Maye", "rank": "QB4", "total": 190.18, "average": 21.13111111111111}}, {"slot": "RB", "player": {"name": "Jaylen Warren", "rank": "RB12", "total": 140.8, "average": 17.6}}, {"slot": "RB", "player": {"name": "Josh Jacobs", "rank": "RB49", "total": 43.8, "average": 14.6}}, {"slot": "WR", "player": {"name": "Matthew Golden", "rank": "WR5", "total": 163.9, "average": 18.211111111111112}}, {"slot": "WR", "player": {"name": "Carnell Tate", "rank": "WR38", "total": 77.3, "average": 11.042857142857143}}, {"slot": "TE", "player": {"name": "Brock Bowers", "rank": "TE2", "total": 146.0, "average": 20.857142857142858}}, {"slot": "WRT", "player": {"name": "Rhamondre Stevenson", "rank": "RB17", "total": 113.7, "average": 12.633333333333333}}, {"slot": "WRT", "player": {"name": "Braelon Allen", "rank": "RB18", "total": 105.0, "average": 11.666666666666666}}, {"slot": "WRTQ", "player": {"name": "Jayden Daniels", "rank": "QB21", "total": 115.2, "average": 19.2}}], "bench": [{"name": "Davante Adams", "rank": "WR22", "total": 102.0, "average": 17.0}, {"name": "Gardner Minshew II", "rank": "QB40", "total": 26.56, "average": 13.28}, {"name": "Marcus Mariota", "rank": "QB37", "total": 34.5, "average": 11.5}, {"name": "Harold Fannin Jr.", "rank": "TE5", "total": 102.3, "average": 11.366666666666667}, {"name": "Adonai Mitchell", "rank": "WR72", "total": 48.5, "average": 9.7}, {"name": "Wan'Dale Robinson", "rank": "WR37", "total": 77.3, "average": 9.6625}, {"name": "Ryan Flournoy", "rank": "WR32", "total": 83.8, "average": 9.31111111111111}, {"name": "Jacory Croskey-Merritt", "rank": "RB47", "total": 44.9, "average": 8.98}, {"name": "Josh Downs", "rank": "WR41", "total": 75.1, "average": 8.344444444444443}, {"name": "Treylon Burks", "rank": "WR74", "total": 47.3, "average": 7.883333333333333}, {"name": "Jordan Watkins", "rank": "WR87", "total": 38.4, "average": 6.3999999999999995}, {"name": "Jordyn Tyson", "rank": "WR163", "total": 5.0, "average": 5.0}, {"name": "Kyle Williams", "rank": "WR88", "total": 38.0, "average": 4.222222222222222}, {"name": "Konata Mumpfield", "rank": "WR95", "total": 33.2, "average": 3.688888888888889}, {"name": "Tommy DeVito", "rank": "QB51", "total": 2.24, "average": 1.12}, {"name": "Demond Claiborne", "rank": "RB107", "total": 4.1, "average": 1.025}, {"name": "Nicholas Singleton", "rank": "RB127", "total": 1.2, "average": 0.3}, {"name": "Joe Flacco", "rank": "QB61", "total": null, "average": null}, {"name": "Joshua Dobbs", "rank": "QB60", "total": null, "average": null}], "analytics": {"average": 140.0275, "starterAverage": 146.94222222222223, "variance": 1527.1839928571428}}, {"id": 9, "name": "Ward of the Rings", "wins": 1, "losses": 15, "ties": 0, "pf": 708.3, "pa": 985.34, "lineup": [{"slot": "QB", "player": {"name": "C.J. Stroud", "rank": "QB8", "total": 166.04, "average": 20.755}}, {"slot": "RB", "player": {"name": "Jeremiyah Love", "rank": "RB41", "total": 53.4, "average": 8.9}}, {"slot": "RB", "player": {"name": "Kaelon Black", "rank": "RB53", "total": 37.7, "average": 4.7125}}, {"slot": "WR", "player": {"name": "DeMario Douglas", "rank": "WR23", "total": 96.4, "average": 10.711111111111112}}, {"slot": "WR", "player": {"name": "Roman Wilson", "rank": "WR79", "total": 44.8, "average": 8.959999999999999}}, {"slot": "TE", "player": {"name": "Isaiah Likely", "rank": "TE3", "total": 128.8, "average": 16.1}}, {"slot": "WRT", "player": {"name": "Germie Bernard", "rank": "WR45", "total": 66.8, "average": 8.35}}, {"slot": "WRT", "player": {"name": "Xavier Worthy", "rank": "WR46", "total": 66.8, "average": 8.35}}, {"slot": "WRTQ", "player": {"name": "Cam Ward", "rank": "QB23", "total": 105.52, "average": 13.19}}], "bench": [{"name": "Tyquan Thornton", "rank": "WR78", "total": 44.9, "average": 11.225}, {"name": "Case Keenum", "rank": "QB41", "total": 26.2, "average": 8.733333333333333}, {"name": "Darius Cooper", "rank": "WR62", "total": 57.0, "average": 6.333333333333333}, {"name": "Rashod Bateman", "rank": "WR63", "total": 55.4, "average": 6.155555555555555}, {"name": "Kenyon Sadiq", "rank": "TE28", "total": 54.8, "average": 6.088888888888889}, {"name": "Gunnar Helm", "rank": "TE40", "total": 37.0, "average": 4.625}, {"name": "Darnell Mooney", "rank": "WR99", "total": 31.5, "average": 3.9375}, {"name": "Tory Horton", "rank": "WR101", "total": 29.5, "average": 3.6875}, {"name": "Bryce Lance", "rank": "WR107", "total": 22.8, "average": 2.85}, {"name": "Eli Stowers", "rank": "TE73", "total": 8.3, "average": 2.766666666666667}, {"name": "Theo Johnson", "rank": "TE61", "total": 15.5, "average": 2.5833333333333335}, {"name": "Andrei Iosivas", "rank": "WR164", "total": 4.9, "average": 2.45}, {"name": "Oscar Delp", "rank": "TE83", "total": 7.0, "average": 1.0}, {"name": "Andrew Armstrong", "rank": "WR173", "total": 3.6, "average": 0.9}, {"name": "Jordan James", "rank": "RB102", "total": 5.3, "average": 0.8833333333333333}, {"name": "Colbie Young", "rank": "WR176", "total": 2.9, "average": 0.48333333333333334}, {"name": "Malik Benson", "rank": "WR178", "total": 2.4, "average": 0.34285714285714286}, {"name": "De'Zhaun Stribling", "rank": "WR215", "total": null, "average": null}, {"name": "Ty Simpson", "rank": "QB999.0", "total": null, "average": null}], "analytics": {"average": 88.5375, "starterAverage": 100.0286111111111, "variance": 323.4234785714286}}, {"id": 10, "name": "il duce", "wins": 9, "losses": 7, "ties": 0, "pf": 1055.04, "pa": 1064.1, "lineup": [{"slot": "QB", "player": {"name": "Jordan Love", "rank": "QB3", "total": 191.02, "average": 21.224444444444444}}, {"slot": "RB", "player": {"name": "Quinshon Judkins", "rank": "RB21", "total": 92.1, "average": 11.5125}}, {"slot": "RB", "player": {"name": "David Montgomery", "rank": "RB45", "total": 45.5, "average": 9.1}}, {"slot": "WR", "player": {"name": "Jaxon Smith-Njigba", "rank": "WR1", "total": 232.06, "average": 25.784444444444446}}, {"slot": "WR", "player": {"name": "Amon-Ra St. Brown", "rank": "WR8", "total": 157.6, "average": 19.7}}, {"slot": "TE", "player": {"name": "George Kittle", "rank": "TE4", "total": 114.3, "average": 14.2875}}, {"slot": "WRT", "player": {"name": "DeVonta Smith", "rank": "WR44", "total": 69.0, "average": 17.25}}, {"slot": "WRT", "player": {"name": "Omar Cooper Jr.", "rank": "WR55", "total": 62.6, "average": 12.52}}, {"slot": "WRTQ", "player": {"name": "Matthew Stafford", "rank": "QB10", "total": 151.86, "average": 16.873333333333335}}], "bench": [{"name": "Malik Willis", "rank": "QB22", "total": 111.04, "average": 13.88}, {"name": "Carson Wentz", "rank": "QB42", "total": 25.54, "average": 12.77}, {"name": "Sam LaPorta", "rank": "TE7", "total": 93.1, "average": 11.6375}, {"name": "Travis Etienne Jr.", "rank": "RB64", "total": 30.9, "average": 10.299999999999999}, {"name": "DK Metcalf", "rank": "WR36", "total": 77.9, "average": 9.7375}, {"name": "Darren Waller", "rank": "TE18", "total": 76.9, "average": 9.6125}, {"name": "Brian Robinson Jr.", "rank": "RB42", "total": 53.1, "average": 8.85}, {"name": "Saquon Barkley", "rank": "RB38", "total": 58.7, "average": 8.385714285714286}, {"name": "MarShawn Lloyd", "rank": "RB43", "total": 51.8, "average": 6.475}, {"name": "TreVeyon Henderson", "rank": "RB56", "total": 33.8, "average": 5.633333333333333}, {"name": "Jonathon Brooks", "rank": "RB94", "total": 9.3, "average": 4.65}, {"name": "Brenen Thompson", "rank": "WR179", "total": 2.3, "average": 1.15}, {"name": "Tyrod Taylor", "rank": "QB64", "total": -0.2, "average": -0.1}, {"name": "Ja'Tavion Sanders", "rank": "TE137", "total": null, "average": null}, {"name": "Max Klare", "rank": "TE128", "total": null, "average": null}, {"name": "Skyler Bell", "rank": "WR216", "total": null, "average": null}, {"name": "Will Howard", "rank": null, "total": null, "average": null}], "analytics": {"average": 131.88, "starterAverage": 148.25222222222223, "variance": 672.3595428571429}}, {"id": 11, "name": "jalen’s world", "wins": 10, "losses": 6, "ties": 0, "pf": 1069.06, "pa": 979.36, "lineup": [{"slot": "QB", "player": {"name": "Patrick Mahomes", "rank": "QB14", "total": 145.98, "average": 18.2475}}, {"slot": "RB", "player": {"name": "James Cook III", "rank": "RB14", "total": 131.7, "average": 18.814285714285713}}, {"slot": "RB", "player": {"name": "Breece Hall", "rank": "RB40", "total": 54.2, "average": 13.55}}, {"slot": "WR", "player": {"name": "Puka Nacua", "rank": "WR4", "total": 173.6, "average": 24.8}}, {"slot": "WR", "player": {"name": "Garrett Wilson", "rank": "WR16", "total": 113.7, "average": 14.2125}}, {"slot": "TE", "player": {"name": "Tyler Warren", "rank": "TE9", "total": 84.1, "average": 12.014285714285714}}, {"slot": "WRT", "player": {"name": "Drake London", "rank": "WR14", "total": 121.6, "average": 13.511111111111111}}, {"slot": "WRT", "player": {"name": "Tre Tucker", "rank": "WR18", "total": 109.3, "average": 12.144444444444444}}, {"slot": "WRTQ", "player": {"name": "Deshaun Watson", "rank": "QB18", "total": 120.94, "average": 15.1175}}], "bench": [{"name": "Jalen Hurts", "rank": "QB28", "total": 83.02, "average": 16.604}, {"name": "Audric Estime", "rank": "RB74", "total": 22.6, "average": 11.3}, {"name": "RJ Harvey", "rank": "RB31", "total": 67.4, "average": 11.233333333333334}, {"name": "Rashee Rice", "rank": "WR51", "total": 66.2, "average": 11.033333333333333}, {"name": "Mike Gesicki", "rank": "TE12", "total": 80.2, "average": 10.025}, {"name": "Ollie Gordon II", "rank": "RB24", "total": 79.6, "average": 9.95}, {"name": "Brenton Strange", "rank": "TE20", "total": 71.6, "average": 8.95}, {"name": "Rico Dowdle", "rank": "RB48", "total": 44.6, "average": 8.92}, {"name": "Justice Hill", "rank": "RB35", "total": 61.1, "average": 6.788888888888889}, {"name": "Quentin Johnston", "rank": "WR77", "total": 45.8, "average": 6.542857142857143}, {"name": "David Njoku", "rank": "TE66", "total": 12.7, "average": 6.35}, {"name": "Tez Johnson", "rank": "WR80", "total": 44.4, "average": 4.933333333333334}, {"name": "Jerry Jeudy", "rank": "WR86", "total": 38.8, "average": 4.311111111111111}, {"name": "Josh Cameron", "rank": "WR94", "total": 33.3, "average": 4.1625}, {"name": "Chimere Dike", "rank": "WR105", "total": 25.4, "average": 3.175}, {"name": "Zachariah Branch", "rank": "WR124", "total": 15.2, "average": 1.9}, {"name": "Ray Davis", "rank": "RB90", "total": 11.2, "average": 1.5999999999999999}, {"name": "Dont'e Thornton Jr.", "rank": "WR6993.0", "total": null, "average": null}, {"name": "Jalen Milroe", "rank": "QB3996.0", "total": null, "average": null}], "analytics": {"average": 133.6325, "starterAverage": 142.411626984127, "variance": 265.6693642857144}}, {"id": 12, "name": "Drew Brothers United", "wins": 3, "losses": 13, "ties": 0, "pf": 753.24, "pa": 1017.5, "lineup": [{"slot": "QB", "player": {"name": "Sam Darnold", "rank": "QB25", "total": 101.32, "average": 14.474285714285713}}, {"slot": "RB", "player": {"name": "Kyle Monangai", "rank": "RB37", "total": 59.3, "average": 14.825}}, {"slot": "RB", "player": {"name": "Chris Rodriguez Jr.", "rank": "RB39", "total": 54.4, "average": 6.8}}, {"slot": "WR", "player": {"name": "Mike Evans", "rank": "WR27", "total": 89.0, "average": 14.833333333333334}}, {"slot": "WR", "player": {"name": "Parker Washington", "rank": "WR17", "total": 109.6, "average": 13.7}}, {"slot": "TE", "player": {"name": "Dallas Goedert", "rank": "TE19", "total": 74.0, "average": 10.571428571428571}}, {"slot": "WRT", "player": {"name": "Devaughn Vele", "rank": "WR26", "total": 89.5, "average": 11.1875}}, {"slot": "WRT", "player": {"name": "Rome Odunze", "rank": "WR28", "total": 88.8, "average": 9.866666666666667}}, {"slot": "WRTQ", "player": {"name": "Justin Herbert", "rank": "QB26", "total": 91.64, "average": 11.455}}], "bench": [{"name": "Baker Mayfield", "rank": "QB33", "total": 54.88, "average": 9.146666666666667}, {"name": "Dontayvion Wicks", "rank": "WR65", "total": 53.4, "average": 8.9}, {"name": "Ladd McConkey", "rank": "WR68", "total": 51.6, "average": 8.6}, {"name": "De'Von Achane", "rank": "RB70", "total": 24.6, "average": 8.200000000000001}, {"name": "Makai Lemon", "rank": "WR42", "total": 73.7, "average": 8.18888888888889}, {"name": "Kalif Raymond", "rank": "WR43", "total": 70.7, "average": 7.855555555555556}, {"name": "Tyler Higbee", "rank": "TE26", "total": 58.7, "average": 6.522222222222222}, {"name": "Chris Godwin Jr.", "rank": "WR60", "total": 57.9, "average": 6.433333333333334}, {"name": "Elic Ayomanor", "rank": "WR84", "total": 40.1, "average": 5.0125}, {"name": "Pierre Strong Jr.", "rank": "RB75", "total": 22.0, "average": 4.4}, {"name": "Mike Washington Jr.", "rank": "RB54", "total": 37.6, "average": 4.177777777777778}, {"name": "Jalen Nailor", "rank": "WR97", "total": 32.2, "average": 4.025}, {"name": "Kevin Coleman Jr.", "rank": "WR100", "total": 29.8, "average": 3.725}, {"name": "Cole Kmet", "rank": "TE49", "total": 24.7, "average": 3.5285714285714285}, {"name": "Calvin Ridley", "rank": "WR125", "total": 15.1, "average": 2.157142857142857}, {"name": "Devin Neal", "rank": "RB3996.0", "total": null, "average": null}, {"name": "J'Mari Taylor", "rank": "RB7992.0", "total": null, "average": null}], "analytics": {"average": 94.155, "starterAverage": 107.71321428571429, "variance": 442.1877428571427}}], "weeks": {"1": [[{"id": 1, "points": 180.46}, {"id": 5, "points": 83.1}], [{"id": 2, "points": 108.32}, {"id": 11, "points": 128.08}], [{"id": 3, "points": 163.52}, {"id": 4, "points": 157.28}], [{"id": 6, "points": 166.0}, {"id": 12, "points": 140.6}], [{"id": 7, "points": 139.98}, {"id": 8, "points": 80.08}], [{"id": 9, "points": 106.76}, {"id": 10, "points": 140.68}]], "2": [[{"id": 1, "points": 126.58}, {"id": 7, "points": 154.06}], [{"id": 2, "points": 145.56}, {"id": 10, "points": 170.58}], [{"id": 3, "points": 112.58}, {"id": 12, "points": 77.76}], [{"id": 4, "points": 133.1}, {"id": 6, "points": 162.9}], [{"id": 5, "points": 69.9}, {"id": 8, "points": 115.76}], [{"id": 9, "points": 100.24}, {"id": 11, "points": 138.64}]], "3": [[{"id": 1, "points": 148.24}, {"id": 8, "points": 157.68}], [{"id": 2, "points": 148.9}, {"id": 9, "points": 84.32}], [{"id": 3, "points": 156.42}, {"id": 6, "points": 111.4}], [{"id": 4, "points": 150.1}, {"id": 12, "points": 93.52}], [{"id": 5, "points": 64.44}, {"id": 7, "points": 126.1}], [{"id": 10, "points": 145.94}, {"id": 11, "points": 146.56}]], "4": [[{"id": 1, "points": 163.14}, {"id": 12, "points": 92.98}], [{"id": 2, "points": 142.36}, {"id": 3, "points": 169.2}], [{"id": 4, "points": 134.66}, {"id": 11, "points": 123.22}], [{"id": 5, "points": 111.12}, {"id": 6, "points": 127.68}], [{"id": 7, "points": 180.74}, {"id": 10, "points": 100.76}], [{"id": 8, "points": 106.9}, {"id": 9, "points": 102.56}]], "5": [[{"id": 1, "points": 141.58}, {"id": 6, "points": 136.3}], [{"id": 2, "points": 104.1}, {"id": 4, "points": 149.84}], [{"id": 3, "points": 109.48}, {"id": 11, "points": 164.8}], [{"id": 5, "points": 68.8}, {"id": 12, "points": 104.64}], [{"id": 7, "points": 129.84}, {"id": 9, "points": 75.34}], [{"id": 8, "points": 195.52}, {"id": 10, "points": 129.9}]], "6": [[{"id": 1, "points": 97.32}, {"id": 3, "points": 106.26}], [{"id": 2, "points": 126.52}, {"id": 7, "points": 102.16}], [{"id": 4, "points": 117.08}, {"id": 5, "points": 88.9}], [{"id": 6, "points": 162.44}, {"id": 9, "points": 104.16}], [{"id": 8, "points": 129.9}, {"id": 11, "points": 129.54}], [{"id": 10, "points": 122.22}, {"id": 12, "points": 80.78}]], "7": [[{"id": 1, "points": 169.5}, {"id": 4, "points": 147.42}], [{"id": 2, "points": 115.24}, {"id": 8, "points": 152.34}], [{"id": 3, "points": 150.6}, {"id": 5, "points": 93.32}], [{"id": 6, "points": 86.9}, {"id": 10, "points": 151.56}], [{"id": 7, "points": 127.5}, {"id": 11, "points": 111.42}], [{"id": 9, "points": 55.76}, {"id": 12, "points": 86.84}]], "8": [[{"id": 1, "points": 121.28}, {"id": 10, "points": 93.4}], [{"id": 2, "points": 178.9}, {"id": 12, "points": 76.12}], [{"id": 3, "points": 148.08}, {"id": 7, "points": 130.04}], [{"id": 4, "points": 135.64}, {"id": 8, "points": 182.04}], [{"id": 5, "points": 71.1}, {"id": 9, "points": 79.16}], [{"id": 6, "points": 123.32}, {"id": 11, "points": 126.8}]], "9": [[{"id": 1, "points": 147.86}, {"id": 9, "points": 96.06}], [{"id": 2, "points": 133.96}, {"id": 6, "points": 97.84}], [{"id": 3, "points": 164.44}, {"id": 8, "points": 120.42}], [{"id": 4, "points": 93.82}, {"id": 7, "points": 75.48}], [{"id": 5, "points": 78.38}, {"id": 10, "points": 120.6}], [{"id": 11, "points": 110.18}, {"id": 12, "points": 58.72}]]}, "picks": [{"year": 2027, "round": 1, "original": 1, "owner": 1}, {"year": 2027, "round": 2, "original": 1, "owner": 4}, {"year": 2027, "round": 3, "original": 1, "owner": 4}, {"year": 2027, "round": 4, "original": 1, "owner": 2}, {"year": 2027, "round": 1, "original": 2, "owner": 8}, {"year": 2027, "round": 2, "original": 2, "owner": 4}, {"year": 2027, "round": 3, "original": 2, "owner": 10}, {"year": 2027, "round": 4, "original": 2, "owner": 1}, {"year": 2027, "round": 1, "original": 3, "owner": 3}, {"year": 2027, "round": 2, "original": 3, "owner": 4}, {"year": 2027, "round": 3, "original": 3, "owner": 3}, {"year": 2027, "round": 4, "original": 3, "owner": 3}, {"year": 2027, "round": 1, "original": 4, "owner": 12}, {"year": 2027, "round": 2, "original": 4, "owner": 4}, {"year": 2027, "round": 3, "original": 4, "owner": 4}, {"year": 2027, "round": 4, "original": 4, "owner": 9}, {"year": 2027, "round": 1, "original": 5, "owner": 5}, {"year": 2027, "round": 2, "original": 5, "owner": 5}, {"year": 2027, "round": 3, "original": 5, "owner": 5}, {"year": 2027, "round": 4, "original": 5, "owner": 5}, {"year": 2027, "round": 1, "original": 6, "owner": 6}, {"year": 2027, "round": 2, "original": 6, "owner": 9}, {"year": 2027, "round": 3, "original": 6, "owner": 6}, {"year": 2027, "round": 4, "original": 6, "owner": 7}, {"year": 2027, "round": 1, "original": 7, "owner": 2}, {"year": 2027, "round": 2, "original": 7, "owner": 7}, {"year": 2027, "round": 3, "original": 7, "owner": 2}, {"year": 2027, "round": 4, "original": 7, "owner": 7}, {"year": 2027, "round": 1, "original": 8, "owner": 9}, {"year": 2027, "round": 2, "original": 8, "owner": 5}, {"year": 2027, "round": 3, "original": 8, "owner": 9}, {"year": 2027, "round": 4, "original": 8, "owner": 2}, {"year": 2027, "round": 1, "original": 9, "owner": 9}, {"year": 2027, "round": 2, "original": 9, "owner": 9}, {"year": 2027, "round": 3, "original": 9, "owner": 12}, {"year": 2027, "round": 4, "original": 9, "owner": 9}, {"year": 2027, "round": 1, "original": 10, "owner": 12}, {"year": 2027, "round": 2, "original": 10, "owner": 9}, {"year": 2027, "round": 3, "original": 10, "owner": 10}, {"year": 2027, "round": 4, "original": 10, "owner": 10}, {"year": 2027, "round": 1, "original": 11, "owner": 9}, {"year": 2027, "round": 2, "original": 11, "owner": 11}, {"year": 2027, "round": 3, "original": 11, "owner": 12}, {"year": 2027, "round": 4, "original": 11, "owner": 5}, {"year": 2027, "round": 1, "original": 12, "owner": 8}, {"year": 2027, "round": 2, "original": 12, "owner": 2}, {"year": 2027, "round": 3, "original": 12, "owner": 12}, {"year": 2027, "round": 4, "original": 12, "owner": 12}, {"year": 2028, "round": 1, "original": 1, "owner": 1}, {"year": 2028, "round": 2, "original": 1, "owner": 1}, {"year": 2028, "round": 3, "original": 1, "owner": 1}, {"year": 2028, "round": 4, "original": 1, "owner": 1}, {"year": 2028, "round": 1, "original": 2, "owner": 2}, {"year": 2028, "round": 2, "original": 2, "owner": 2}, {"year": 2028, "round": 3, "original": 2, "owner": 4}, {"year": 2028, "round": 4, "original": 2, "owner": 2}, {"year": 2028, "round": 1, "original": 3, "owner": 3}, {"year": 2028, "round": 2, "original": 3, "owner": 3}, {"year": 2028, "round": 3, "original": 3, "owner": 3}, {"year": 2028, "round": 4, "original": 3, "owner": 3}, {"year": 2028, "round": 1, "original": 4, "owner": 4}, {"year": 2028, "round": 2, "original": 4, "owner": 1}, {"year": 2028, "round": 3, "original": 4, "owner": 4}, {"year": 2028, "round": 4, "original": 4, "owner": 2}, {"year": 2028, "round": 1, "original": 5, "owner": 5}, {"year": 2028, "round": 2, "original": 5, "owner": 5}, {"year": 2028, "round": 3, "original": 5, "owner": 5}, {"year": 2028, "round": 4, "original": 5, "owner": 5}, {"year": 2028, "round": 1, "original": 6, "owner": 6}, {"year": 2028, "round": 2, "original": 6, "owner": 6}, {"year": 2028, "round": 3, "original": 6, "owner": 8}, {"year": 2028, "round": 4, "original": 6, "owner": 7}, {"year": 2028, "round": 1, "original": 7, "owner": 7}, {"year": 2028, "round": 2, "original": 7, "owner": 7}, {"year": 2028, "round": 3, "original": 7, "owner": 7}, {"year": 2028, "round": 4, "original": 7, "owner": 7}, {"year": 2028, "round": 1, "original": 8, "owner": 8}, {"year": 2028, "round": 2, "original": 8, "owner": 8}, {"year": 2028, "round": 3, "original": 8, "owner": 8}, {"year": 2028, "round": 4, "original": 8, "owner": 4}, {"year": 2028, "round": 1, "original": 9, "owner": 9}, {"year": 2028, "round": 2, "original": 9, "owner": 9}, {"year": 2028, "round": 3, "original": 9, "owner": 9}, {"year": 2028, "round": 4, "original": 9, "owner": 9}, {"year": 2028, "round": 1, "original": 10, "owner": 5}, {"year": 2028, "round": 2, "original": 10, "owner": 10}, {"year": 2028, "round": 3, "original": 10, "owner": 1}, {"year": 2028, "round": 4, "original": 10, "owner": 10}, {"year": 2028, "round": 1, "original": 11, "owner": 11}, {"year": 2028, "round": 2, "original": 11, "owner": 11}, {"year": 2028, "round": 3, "original": 11, "owner": 5}, {"year": 2028, "round": 4, "original": 11, "owner": 11}, {"year": 2028, "round": 1, "original": 12, "owner": 12}, {"year": 2028, "round": 2, "original": 12, "owner": 12}, {"year": 2028, "round": 3, "original": 12, "owner": 12}, {"year": 2028, "round": 4, "original": 12, "owner": 12}, {"year": 2029, "round": 1, "original": 1, "owner": 1}, {"year": 2029, "round": 2, "original": 1, "owner": 1}, {"year": 2029, "round": 3, "original": 1, "owner": 1}, {"year": 2029, "round": 4, "original": 1, "owner": 1}, {"year": 2029, "round": 1, "original": 2, "owner": 2}, {"year": 2029, "round": 2, "original": 2, "owner": 2}, {"year": 2029, "round": 3, "original": 2, "owner": 2}, {"year": 2029, "round": 4, "original": 2, "owner": 2}, {"year": 2029, "round": 1, "original": 3, "owner": 3}, {"year": 2029, "round": 2, "original": 3, "owner": 3}, {"year": 2029, "round": 3, "original": 3, "owner": 3}, {"year": 2029, "round": 4, "original": 3, "owner": 3}, {"year": 2029, "round": 1, "original": 4, "owner": 12}, {"year": 2029, "round": 2, "original": 4, "owner": 4}, {"year": 2029, "round": 3, "original": 4, "owner": 4}, {"year": 2029, "round": 4, "original": 4, "owner": 4}, {"year": 2029, "round": 1, "original": 5, "owner": 5}, {"year": 2029, "round": 2, "original": 5, "owner": 5}, {"year": 2029, "round": 3, "original": 5, "owner": 5}, {"year": 2029, "round": 4, "original": 5, "owner": 5}, {"year": 2029, "round": 1, "original": 6, "owner": 6}, {"year": 2029, "round": 2, "original": 6, "owner": 6}, {"year": 2029, "round": 3, "original": 6, "owner": 6}, {"year": 2029, "round": 4, "original": 6, "owner": 6}, {"year": 2029, "round": 1, "original": 7, "owner": 7}, {"year": 2029, "round": 2, "original": 7, "owner": 7}, {"year": 2029, "round": 3, "original": 7, "owner": 7}, {"year": 2029, "round": 4, "original": 7, "owner": 7}, {"year": 2029, "round": 1, "original": 8, "owner": 8}, {"year": 2029, "round": 2, "original": 8, "owner": 8}, {"year": 2029, "round": 3, "original": 8, "owner": 8}, {"year": 2029, "round": 4, "original": 8, "owner": 8}, {"year": 2029, "round": 1, "original": 9, "owner": 9}, {"year": 2029, "round": 2, "original": 9, "owner": 9}, {"year": 2029, "round": 3, "original": 9, "owner": 9}, {"year": 2029, "round": 4, "original": 9, "owner": 9}, {"year": 2029, "round": 1, "original": 10, "owner": 10}, {"year": 2029, "round": 2, "original": 10, "owner": 10}, {"year": 2029, "round": 3, "original": 10, "owner": 10}, {"year": 2029, "round": 4, "original": 10, "owner": 10}, {"year": 2029, "round": 1, "original": 11, "owner": 11}, {"year": 2029, "round": 2, "original": 11, "owner": 11}, {"year": 2029, "round": 3, "original": 11, "owner": 11}, {"year": 2029, "round": 4, "original": 11, "owner": 11}, {"year": 2029, "round": 1, "original": 12, "owner": 12}, {"year": 2029, "round": 2, "original": 12, "owner": 12}, {"year": 2029, "round": 3, "original": 12, "owner": 12}, {"year": 2029, "round": 4, "original": 12, "owner": 12}], "medianModel": {"leagueId": "1312004884693807104", "lastScored": 8, "playoffStart": 15, "scoring": {"sack": 1.0, "fgm_40_49": 4.0, "pass_int": -2.0, "pts_allow_0": 10.0, "pass_2pt": 2.0, "st_td": 6.0, "rec_td": 6.0, "fgm_30_39": 3.0, "xpmiss": -1.0, "rush_td": 6.0, "rec_2pt": 2.0, "st_fum_rec": 0.0, "fgmiss": -1.0, "ff": 1.0, "rec": 1.0, "pts_allow_14_20": 1.0, "fgm_0_19": 3.0, "int": 2.0, "def_st_fum_rec": 2.0, "fum_lost": -2.0, "pts_allow_1_6": 7.0, "fgm_20_29": 3.0, "pts_allow_21_27": 0.0, "xpm": 1.0, "rush_2pt": 2.0, "fum_rec": 1.0, "def_st_td": 6.0, "fgm_50p": 5.0, "def_td": 6.0, "safe": 2.0, "pass_yd": 0.04, "blk_kick": 2.0, "pass_td": 4.0, "rush_yd": 0.1, "fum": 0.0, "pts_allow_28_34": -1.0, "pts_allow_35p": -4.0, "fum_rec_td": 6.0, "rec_yd": 0.1, "def_st_ff": 0.0, "pts_allow_7_13": 4.0, "st_ff": 0.0}, "players": {"11560": ["CHI", "QB"], "11584": ["TB", "RB"], "11638": ["SF", "WR"], "12484": ["HOU", "WR"], "12487": ["LAR", "TE"], "12542": ["NE", "WR"], "12545": ["NO", "QB"], "13296": ["MIA", "WR"], "13324": ["BAL", "TE"], "13345": ["DEN", "RB"], "13413": ["KC", "WR"], "3294": ["DAL", "QB"], "3321": [null, "WR"], "4035": ["NO", "RB"], "4039": ["SEA", "WR"], "4147": ["CIN", "RB"], "6768": ["ATL", "QB"], "7526": ["DEN", "WR"], "7569": ["HOU", "WR"], "8127": ["LAC", "TE"], "8130": ["ARI", "TE"], "8137": ["DAL", "WR"], "8207": ["DAL", "RB"], "8676": ["SEA", "WR"], "9224": ["CIN", "RB"], "9479": ["PIT", "TE"], "9509": ["ATL", "RB"], "9997": ["BAL", "WR"], "11631": ["JAX", "WR"], "12469": ["CLE", "RB"], "12490": ["JAX", "RB"], "12493": ["LAC", "TE"], "12519": ["CHI", "WR"], "12530": ["JAX", "DB"], "13405": ["MIA", "RB"], "13421": ["NE", "TE"], "2306": ["NYG", "QB"], "3198": ["BAL", "RB"], "5844": ["MIN", "TE"], "5849": ["MIN", "QB"], "5859": ["NE", "WR"], "6786": ["DAL", "WR"], "7523": ["JAX", "QB"], "7564": ["CIN", "WR"], "7594": ["CAR", "RB"], "8132": ["ARI", "RB"], "8172": ["MIA", "TE"], "8408": ["MIN", "RB"], "9229": ["IND", "QB"], "9230": ["PHI", "QB"], "9502": ["HOU", "WR"], "9753": ["SEA", "RB"], "9756": ["MIN", "WR"], "11256": ["CHI", "QB"], "11603": ["SEA", "TE"], "11628": ["HOU", "WR"], "11643": ["MIA", "RB"], "12457": ["PHI", "RB"], "12514": ["TB", "WR"], "12521": ["SEA", "TE"], "12536": ["HOU", "WR"], "13302": ["BAL", "RB"], "13353": ["CAR", "WR"], "3214": ["NE", "TE"], "4881": ["BAL", "QB"], "5012": ["BAL", "TE"], "5045": ["DEN", "WR"], "5870": ["IND", "QB"], "5967": ["TEN", "RB"], "6770": ["CIN", "QB"], "6801": ["CIN", "WR"], "6803": ["SF", "WR"], "7567": ["TB", "RB"], "7588": ["DAL", "RB"], "8119": ["ATL", "WR"], "8142": ["IND", "WR"], "8151": ["KC", "RB"], "8167": ["GB", "WR"], "9482": ["LV", "TE"], "9508": ["TEN", "RB"], "9757": [null, "RB"], "11557": ["PHI", "QB"], "11565": ["NYG", "QB"], "11586": ["LAR", "RB"], "11589": ["ARI", "RB"], "11610": ["MIA", "WR"], "11618": ["TB", "WR"], "11627": ["DEN", "WR"], "11647": ["LAC", "RB"], "11651": ["SF", "RB"], "1166": ["LV", "QB"], "12504": ["GB", "RB"], "12507": ["LAC", "RB"], "12527": ["LV", "RB"], "13272": ["ARI", "QB"], "13301": ["WAS", "WR"], "13317": ["TB", "WR"], "3257": ["BAL", "QB"], "4983": ["BUF", "WR"], "5854": ["SEA", "QB"], "7049": ["MIN", "WR"], "7527": ["SF", "QB"], "7591": ["KC", "QB"], "8144": ["NO", "WR"], "8148": ["DET", "WR"], "8183": ["SF", "QB"], "8210": ["WAS", "TE"], "9221": ["DET", "RB"], "9484": ["GB", "TE"], "11559": ["ATL", "QB"], "11608": ["NYJ", "WR"], "11626": ["CAR", "WR"], "11629": ["BAL", "WR"], "11637": ["BUF", "WR"], "12481": ["NYG", "RB"], "12492": ["DEN", "WR"], "12508": ["NYG", "QB"], "12509": ["LAC", "WR"], "12517": ["CHI", "TE"], "12544": ["JAX", "RB"], "13269": ["LV", "QB"], "13277": ["NO", "RB"], "13285": ["NYG", "WR"], "13293": ["BAL", "WR"], "13303": ["NYJ", "QB"], "13311": ["MIA", "WR"], "13337": ["KC", "RB"], "13346": ["CLE", "WR"], "13350": ["BAL", "QB"], "13411": ["CHI", "WR"], "13425": ["TB", "QB"], "13434": ["MIA", "TE"], "4066": ["DEN", "TE"], "6819": ["PIT", "WR"], "8121": ["NE", "WR"], "8134": ["BUF", "WR"], "9504": ["HOU", "WR"], "9511": ["LAC", "RB"], "10218": ["HOU", "WR"], "10222": ["GB", "WR"], "10236": ["BUF", "TE"], "11632": ["NYG", "WR"], "11646": ["CAR", "WR"], "11655": ["NYG", "RB"], "11729": ["DET", "RB"], "12048": ["SEA", "RB"], "12483": ["LV", "WR"], "12491": ["NE", "RB"], "12505": ["KC", "WR"], "12524": ["CLE", "QB"], "13268": ["BAL", "WR"], "13286": ["SEA", "RB"], "1466": ["KC", "TE"], "1479": ["IND", "WR"], "2449": ["WAS", "WR"], "4034": ["SF", "RB"], "4199": ["MIN", "RB"], "4984": ["BUF", "QB"], "5872": ["SF", "WR"], "6806": ["DEN", "RB"], "8111": ["TB", "TE"], "8136": ["WAS", "RB"], "8205": ["DET", "RB"], "9228": ["CAR", "QB"], "9506": ["TB", "RB"], "96": ["PIT", "QB"], "10232": ["ARI", "WR"], "11435": ["SEA", "RB"], "11563": ["DEN", "QB"], "12474": ["HOU", "RB"], "12498": ["NYJ", "TE"], "12526": ["CAR", "WR"], "12535": ["DET", "WR"], "13264": ["CIN", "WR"], "13289": ["PIT", "QB"], "13298": ["CLE", "WR"], "13424": ["IND", "RB"], "1373": ["NYJ", "QB"], "3163": ["DET", "QB"], "4137": ["ARI", "RB"], "5001": ["HOU", "TE"], "5927": ["WAS", "WR"], "5947": ["JAX", "WR"], "6130": ["NYG", "RB"], "6790": ["CHI", "RB"], "6794": ["MIN", "WR"], "6813": ["IND", "RB"], "6865": ["LAR", "TE"], "7002": ["NO", "TE"], "7553": ["ATL", "TE"], "7600": ["PIT", "TE"], "8110": ["DAL", "TE"], "8150": ["LAR", "RB"], "9225": ["PHI", "RB"], "11292": ["NE", "QB"], "11564": ["NE", "QB"], "11566": ["WAS", "QB"], "11576": ["NYJ", "RB"], "11604": ["LV", "TE"], "11625": ["NYJ", "WR"], "11783": ["DAL", "WR"], "12501": ["GB", "WR"], "12506": ["CLE", "TE"], "12533": ["WAS", "RB"], "12547": ["NE", "WR"], "12634": ["SF", "WR"], "12718": ["LAR", "WR"], "13279": ["TEN", "WR"], "13281": ["NO", "WR"], "13288": ["TEN", "RB"], "13347": ["MIN", "RB"], "19": ["CIN", "QB"], "2133": ["LAR", "WR"], "2307": ["WAS", "QB"], "4179": ["DET", "QB"], "5850": ["GB", "RB"], "6011": ["ARI", "QB"], "7611": ["NE", "RB"], "8126": ["TEN", "WR"], "8135": ["WAS", "WR"], "8228": ["PIT", "RB"], "9500": ["IND", "WR"], "10226": ["CIN", "WR"], "11597": ["NYG", "TE"], "11624": ["KC", "WR"], "11630": ["PIT", "WR"], "12467": ["SF", "RB"], "12497": ["SEA", "WR"], "12502": ["TEN", "TE"], "12522": ["TEN", "QB"], "12863": ["KC", "WR"], "13150": ["PHI", "WR"], "13274": ["PIT", "WR"], "13275": ["LAR", "QB"], "13287": ["ARI", "RB"], "13319": ["NO", "TE"], "13329": ["LV", "WR"], "13330": ["NYJ", "TE"], "13349": ["PHI", "TE"], "13414": ["SF", "RB"], "13417": ["SF", "WR"], "13420": ["NO", "WR"], "13477": ["CIN", "WR"], "1737": ["CHI", "QB"], "7090": ["NYG", "WR"], "7571": ["BAL", "WR"], "8131": ["NYG", "TE"], "8188": ["KC", "WR"], "9501": ["NE", "WR"], "9758": ["HOU", "QB"], "10859": ["DET", "TE"], "11581": ["GB", "RB"], "11583": ["CAR", "RB"], "11600": ["CAR", "TE"], "12511": ["PIT", "QB"], "12512": ["CLE", "RB"], "12529": ["NE", "RB"], "13276": ["NYJ", "WR"], "13278": ["LAR", "TE"], "13380": ["LAC", "WR"], "13402": ["BUF", "WR"], "2505": ["CAR", "TE"], "3161": ["MIN", "QB"], "421": ["LAR", "QB"], "4217": ["SF", "TE"], "4866": ["PHI", "RB"], "5846": ["PIT", "WR"], "5892": ["HOU", "RB"], "6804": ["GB", "QB"], "7525": ["PHI", "WR"], "7543": ["NO", "RB"], "7547": ["DET", "WR"], "8154": ["ATL", "RB"], "8161": ["MIA", "QB"], "827": ["GB", "QB"], "9488": ["SEA", "WR"], "10213": ["LV", "WR"], "10229": ["KC", "WR"], "11575": ["BUF", "RB"], "11579": ["NO", "RB"], "12485": ["TB", "WR"], "12489": ["DEN", "RB"], "12495": ["MIA", "RB"], "12510": ["SEA", "QB"], "12518": ["IND", "TE"], "12540": ["TEN", "WR"], "12541": ["LV", "WR"], "13320": ["ATL", "WR"], "13394": ["JAX", "WR"], "4017": ["CLE", "QB"], "4033": ["LAC", "TE"], "4046": ["KC", "QB"], "4993": ["CIN", "TE"], "5995": ["BAL", "RB"], "6783": ["CLE", "WR"], "6904": ["PHI", "QB"], "7021": ["PIT", "RB"], "8112": ["ATL", "WR"], "8138": ["BUF", "RB"], "8146": ["NYJ", "WR"], "8155": ["NYJ", "RB"], "9480": ["JAX", "TE"], "9493": ["LAR", "WR"], "9754": ["LAC", "WR"], "10219": ["JAX", "RB"], "11620": ["CHI", "WR"], "11635": ["LAC", "WR"], "11834": ["NO", "WR"], "12476": ["WAS", "RB"], "12499": ["TEN", "WR"], "12534": ["CHI", "RB"], "13294": ["PHI", "WR"], "13305": ["LV", "RB"], "13338": ["MIA", "WR"], "13348": ["JAX", "RB"], "2216": ["SF", "WR"], "3271": ["LAR", "TE"], "3634": ["CHI", "WR"], "4037": ["TB", "WR"], "4892": ["TB", "QB"], "4943": ["SEA", "QB"], "4981": ["TEN", "WR"], "5022": ["PHI", "TE"], "6797": ["LAC", "QB"], "6826": ["CHI", "TE"], "8116": ["GB", "RB"], "8180": ["LV", "WR"], "9226": ["MIA", "RB"], "9486": ["PHI", "WR"], "9487": ["JAX", "WR"]}}, "playoffModel": {"schedule": [[[1, 9], [2, 6], [3, 8], [4, 7], [5, 10], [11, 12]], [[1, 2], [3, 10], [4, 9], [5, 11], [6, 8], [7, 12]], [[1, 11], [2, 5], [3, 9], [4, 10], [6, 7], [8, 12]], [[1, 5], [2, 11], [3, 4], [6, 12], [7, 8], [9, 10]], [[1, 7], [2, 10], [3, 12], [4, 6], [5, 8], [9, 11]], [[1, 8], [2, 9], [3, 6], [4, 12], [5, 7], [10, 11]]], "medianGame": true, "reseed": true, "supported": true}, "updated": "2026-11-09T20:34:59+00:00", "ktc": {"updated": "2026-11-09T21:48:35+00:00", "assets": [["Jahmyr Gibbs", "RB", 24.6, 9999], ["Jaxon Smith-Njigba", "WR", 24.7, 9999], ["Josh Allen", "QB", 30.5, 9979], ["Bijan Robinson", "RB", 24.8, 9404], ["Ja'Marr Chase", "WR", 26.7, 8506], ["Brock Bowers", "TE", 23.9, 8341], ["Caleb Williams", "QB", 25.0, 8256], ["Puka Nacua", "WR", 25.4, 8130], ["Drake Maye", "QB", 24.2, 7667], ["Amon-Ra St. Brown", "WR", 27.0, 7471], ["Malik Nabers", "WR", 23.3, 7427], ["Trey McBride", "TE", 27.0, 7381], ["Joe Burrow", "QB", 29.9, 7333], ["Kenneth Walker III", "RB", 26.0, 7269], ["CeeDee Lamb", "WR", 27.6, 7256], ["Brock Purdy", "QB", 26.9, 7095], ["Trevor Lawrence", "QB", 27.1, 6835], ["2027 Early 1st", "RDP", 0.0, 6745], ["Justin Jefferson", "WR", 27.4, 6664], ["Drake London", "WR", 25.3, 6630], ["Jayden Daniels", "QB", 25.9, 6387], ["Chris Olave", "WR", 26.4, 6382], ["James Cook", "RB", 27.1, 6364], ["Matthew Golden", "WR", 23.3, 6328], ["Zay Flowers", "WR", 26.2, 6319], ["Luther Burden", "WR", 22.9, 6316], ["Tetairoa McMillan", "WR", 23.6, 6308], ["Lamar Jackson", "QB", 29.8, 6284], ["Jonathan Taylor", "RB", 27.8, 6278], ["Jeremiyah Love", "RB", 21.4, 6265], ["Jordan Love", "QB", 28.0, 6194], ["Ashton Jeanty", "RB", 22.9, 5999], ["Patrick Mahomes", "QB", 31.1, 5956], ["Tee Higgins", "WR", 27.8, 5840], ["Parker Washington", "WR", 24.6, 5833], ["Bucky Irving", "RB", 24.2, 5757], ["Christian Watson", "WR", 27.5, 5746], ["Colston Loveland", "TE", 22.6, 5741], ["Garrett Wilson", "WR", 26.3, 5736], ["Bhayshul Tuten", "RB", 23.7, 5716], ["Carnell Tate", "WR", 21.8, 5630], ["De'Von Achane", "RB", 25.1, 5573], ["2027 Mid 1st", "RDP", 0.0, 5565], ["2028 Early 1st", "RDP", 0.0, 5565], ["Nico Collins", "WR", 27.6, 5527], ["Fernando Mendoza", "QB", 23.1, 5492], ["George Pickens", "WR", 25.7, 5458], ["C.J. Stroud", "QB", 25.1, 5445], ["Jaxson Dart", "QB", 23.5, 5445], ["Christian McCaffrey", "RB", 30.4, 5406], ["Kyren Williams", "RB", 26.2, 5337], ["Tyler Warren", "TE", 24.5, 5303], ["Bryce Young", "QB", 25.3, 5203], ["Emeka Egbuka", "WR", 24.1, 5141], ["Jordyn Tyson", "WR", 22.2, 5118], ["Breece Hall", "RB", 25.4, 5110], ["Javonte Williams", "RB", 26.5, 5107], ["Tyler Shough", "QB", 27.1, 5087], ["Jared Goff", "QB", 32.1, 5082], ["D'Andre Swift", "RB", 27.8, 5066], ["2027 Late 1st", "RDP", 0.0, 5057], ["KC Concepcion", "WR", 22.1, 4978], ["Denzel Boston", "WR", 22.9, 4911], ["2028 Mid 1st", "RDP", 0.0, 4831], ["Dak Prescott", "QB", 33.3, 4826], ["2029 Early 1st", "RDP", 0.0, 4813], ["Chuba Hubbard", "RB", 27.4, 4811], ["DeVonta Smith", "WR", 28.0, 4804], ["Tucker Kraft", "TE", 26.0, 4796], ["Harold Fannin", "TE", 22.3, 4792], ["Isaiah Likely", "TE", 26.6, 4777], ["Quinshon Judkins", "RB", 23.0, 4772], ["Bo Nix", "QB", 26.7, 4746], ["Jameson Williams", "WR", 25.6, 4743], ["Jaylen Warren", "RB", 28.0, 4701], ["Omar Cooper Jr.", "WR", 22.9, 4697], ["Sam LaPorta", "TE", 25.8, 4651], ["Chase Brown", "RB", 26.6, 4646], ["Justin Herbert", "QB", 28.7, 4626], ["Jonah Coleman", "RB", 23.2, 4554], ["Michael Wilson", "WR", 26.7, 4518], ["Jalen Coker", "WR", 25.0, 4504], ["Makai Lemon", "WR", 22.4, 4449], ["Rashee Rice", "WR", 26.6, 4445], ["2028 Late 1st", "RDP", 0.0, 4431], ["Rome Odunze", "WR", 24.4, 4411], ["Ladd McConkey", "WR", 25.0, 4367], ["Jadarian Price", "RB", 23.1, 4332], ["2029 Mid 1st", "RDP", 0.0, 4287], ["Jalen Hurts", "QB", 28.2, 4281], ["Omarion Hampton", "RB", 23.6, 4275], ["Braelon Allen", "RB", 22.8, 4243], ["Derrick Henry", "RB", 32.8, 4208], ["Cam Skattebo", "RB", 24.8, 4076], ["Saquon Barkley", "RB", 29.8, 4036], ["Kenyon Sadiq", "TE", 21.7, 4024], ["Blake Corum", "RB", 26.0, 4011], ["Germie Bernard", "WR", 22.9, 4007], ["2027 Early 2nd", "RDP", 0.0, 3989], ["George Kittle", "TE", 33.1, 3976], ["2029 Late 1st", "RDP", 0.0, 3933], ["Kyle Monangai", "RB", 24.4, 3668], ["Sam Darnold", "QB", 29.4, 3636], ["Ollie Gordon II", "RB", 22.8, 3634], ["Cam Ward", "QB", 24.5, 3601], ["Michael Penix Jr.", "QB", 26.5, 3592], ["A.J. Brown", "WR", 29.4, 3585], ["Dalton Kincaid", "TE", 27.1, 3579], ["2027 Mid 2nd", "RDP", 0.0, 3565], ["D.J. Moore", "WR", 29.6, 3542], ["Jaylen Waddle", "WR", 28.0, 3528], ["TreVeyon Henderson", "RB", 24.0, 3516], ["Antonio Williams", "WR", 22.3, 3514], ["Baker Mayfield", "QB", 31.6, 3483], ["De'Zhaun Stribling", "WR", 23.9, 3414], ["2028 Early 2nd", "RDP", 0.0, 3411], ["Rhamondre Stevenson", "RB", 28.7, 3407], ["Ty Simpson", "QB", 23.9, 3394], ["Zach Charbonnet", "RB", 25.8, 3366], ["Caleb Douglas", "WR", 23.2, 3365], ["Josh Jacobs", "RB", 28.7, 3364], ["Jordan Addison", "WR", 24.8, 3358], ["Marvin Harrison Jr.", "WR", 24.2, 3350], ["Matthew Stafford", "QB", 38.8, 3348], ["Mike Washington Jr.", "RB", 23.4, 3307], ["Kyle Pitts", "TE", 26.1, 3286], ["J.J. McCarthy", "QB", 23.8, 3276], ["Emmett Johnson", "RB", 23.1, 3275], ["Mike Evans", "WR", 33.2, 3272], ["Travis Etienne", "RB", 27.8, 3266], ["Josh Downs", "WR", 25.2, 3229], ["Brian Thomas Jr.", "WR", 24.1, 3212], ["Malik Willis", "QB", 27.5, 3188], ["2027 Late 2nd", "RDP", 0.0, 3182], ["Alec Pierce", "WR", 26.5, 3158], ["Adonai Mitchell", "WR", 24.1, 3147], ["Tony Pollard", "RB", 29.5, 3144], ["Kaelon Black", "RB", 25.1, 3144], ["Ja'Kobi Lane", "WR", 22.3, 3124], ["Davante Adams", "WR", 33.9, 3113], ["Brenton Strange", "TE", 25.9, 3105], ["2028 Mid 2nd", "RDP", 0.0, 3102], ["Chris Bell", "WR", 22.4, 3092], ["RJ Harvey", "RB", 25.8, 3088], ["Terrance Ferguson", "TE", 23.7, 3088], ["2029 Early 2nd", "RDP", 0.0, 3066], ["Woody Marks", "RB", 25.9, 3058], ["Malachi Fields", "WR", 23.2, 3038], ["Tyler Allgeier", "RB", 26.6, 3024], ["Tre Tucker", "WR", 25.7, 3021], ["DK Metcalf", "WR", 28.9, 3005], ["Malik Washington", "WR", 25.8, 2975], ["Xavier Worthy", "WR", 23.5, 2946], ["2028 Late 2nd", "RDP", 0.0, 2944], ["Jayden Higgins", "WR", 23.9, 2940], ["Kyler Murray", "QB", 29.2, 2937], ["Eli Raridon", "TE", 22.7, 2924], ["Keon Coleman", "WR", 23.5, 2904], ["2029 Mid 2nd", "RDP", 0.0, 2879], ["Dylan Sampson", "RB", 22.2, 2822], ["Wan'Dale Robinson", "WR", 25.8, 2809], ["Khalil Shakir", "WR", 26.8, 2809], ["Michael Mayer", "TE", 25.3, 2806], ["Jacory Croskey-Merritt", "RB", 25.6, 2789], ["Eli Stowers", "TE", 23.6, 2784], ["T.J. Hockenson", "TE", 29.4, 2778], ["Jordan Mason", "RB", 27.5, 2769], ["Seth McGowan", "RB", 25.0, 2768], ["Kirk Cousins", "QB", 38.2, 2766], ["Carson Beck", "QB", 25.0, 2766], ["2029 Late 2nd", "RDP", 0.0, 2766], ["Travis Hunter", "WR", 23.5, 2762], ["Rico Dowdle", "RB", 28.4, 2761], ["Stefon Diggs", "WR", 32.9, 2747], ["Jayden Reed", "WR", 26.5, 2745], ["Romeo Doubs", "WR", 26.6, 2728], ["Jaylin Noel", "WR", 24.2, 2728], ["Jonathon Brooks", "RB", 23.3, 2725], ["Ryan Flournoy", "WR", 27.0, 2706], ["Jakobi Meyers", "WR", 30.0, 2695], ["Daniel Jones", "QB", 29.4, 2694], ["Rachaad White", "RB", 27.8, 2693], ["Ricky Pearsall", "WR", 26.2, 2680], ["Pat Bryant", "WR", 23.9, 2678], ["Devaughn Vele", "WR", 28.9, 2675], ["2027 Early 3rd", "RDP", 0.0, 2674], ["Dontayvion Wicks", "WR", 25.4, 2672], ["Demario Douglas", "WR", 25.9, 2668], ["Oronde Gadsden", "TE", 23.4, 2665], ["David Montgomery", "RB", 29.4, 2663], ["Ted Hurst", "WR", 22.4, 2662], ["Travis Kelce", "TE", 37.1, 2658], ["Jake Ferguson", "TE", 27.8, 2640], ["Roman Wilson", "WR", 25.4, 2637], ["Deshaun Watson", "QB", 31.2, 2618], ["2027 Mid 3rd", "RDP", 0.0, 2604], ["Mason Taylor", "TE", 22.5, 2594], ["Chigoziem Okonkwo", "TE", 27.2, 2593], ["AJ Barner", "TE", 24.5, 2588], ["Kenneth Gainwell", "RB", 27.6, 2586], ["Tank Dell", "WR", 27.0, 2572], ["2028 Early 3rd", "RDP", 0.0, 2568], ["Dallas Goedert", "TE", 31.8, 2561], ["Pat Freiermuth", "TE", 28.0, 2557], ["Juwan Johnson", "TE", 30.2, 2551], ["Quentin Johnston", "WR", 25.2, 2545], ["Tre Harris", "WR", 24.7, 2545], ["Chris Rodriguez", "RB", 26.1, 2525], ["Zachariah Branch", "WR", 22.6, 2521], ["Hunter Henry", "TE", 31.9, 2507], ["Brian Robinson", "RB", 27.6, 2482], ["J.K. Dobbins", "RB", 27.9, 2481], ["Aaron Jones", "RB", 31.9, 2475], ["Darnell Washington", "TE", 25.2, 2472], ["Cyrus Allen", "WR", 23.7, 2467], ["Jalen McMillan", "WR", 24.9, 2463], ["Terry McLaurin", "WR", 31.2, 2462], ["2027 Late 3rd", "RDP", 0.0, 2456], ["Michael Pittman", "WR", 29.1, 2453], ["Geno Smith", "QB", 36.1, 2447], ["Deebo Samuel", "WR", 30.8, 2445], ["Isaac TeSlaa", "WR", 24.7, 2441], ["Shedeur Sanders", "QB", 24.8, 2424], ["Aaron Rodgers", "QB", 42.9, 2410], ["Nicholas Singleton", "RB", 22.8, 2374], ["Keaton Mitchell", "RB", 24.8, 2364], ["Tyjae Spears", "RB", 25.4, 2316], ["2028 Mid 3rd", "RDP", 0.0, 2316], ["Courtland Sutton", "WR", 31.1, 2301], ["Mac Jones", "QB", 28.2, 2301], ["Rashid Shaheed", "WR", 28.2, 2294], ["2029 Early 3rd", "RDP", 0.0, 2286], ["Elic Ayomanor", "WR", 23.4, 2284], ["Kevin Coleman", "WR", 23.2, 2263], ["Drew Allar", "QB", 22.7, 2262], ["Kyle Williams", "WR", 24.0, 2255], ["Jacoby Brissett", "QB", 33.9, 2251], ["Tank Bigsby", "RB", 25.2, 2244], ["Jalon Daniels", "QB", 24.0, 2238], ["Kimani Vidal", "RB", 25.2, 2211], ["Chris Godwin", "WR", 30.7, 2200], ["Joe Milton", "QB", 26.7, 2194], ["Mike Gesicki", "TE", 31.1, 2191], ["Dalton Schultz", "TE", 30.3, 2188], ["Tory Horton", "WR", 23.9, 2187], ["2028 Late 3rd", "RDP", 0.0, 2177], ["Kayshon Boutte", "WR", 24.5, 2158], ["Gunnar Helm", "TE", 24.2, 2118], ["Darius Cooper", "WR", 25.0, 2117], ["2029 Mid 3rd", "RDP", 0.0, 2113], ["Elijah Sarratt", "WR", 23.4, 2097], ["Kendre Miller", "RB", 24.4, 2078], ["Tyrone Tracy", "RB", 27.0, 2076], ["Jalen Milroe", "QB", 23.9, 2057], ["Treylon Burks", "WR", 26.6, 2049], ["Rashod Bateman", "WR", 26.9, 2047], ["Chris Brazzell II", "WR", 23.0, 2047], ["Chimere Dike", "WR", 24.9, 2044], ["Jaylen Wright", "RB", 23.6, 2043], ["Efton Chism", "WR", 25.0, 2039], ["Jack Bech", "WR", 23.9, 2038], ["Tez Johnson", "WR", 24.5, 2037], ["Josh Cameron", "WR", 23.6, 2028], ["Anthony Richardson", "QB", 24.5, 2027], ["Mark Andrews", "TE", 31.2, 2021], ["Troy Franklin", "WR", 23.8, 2007], ["Emanuel Wilson", "RB", 27.5, 2003], ["Greg Dulcich", "TE", 26.6, 2000], ["Alvin Kamara", "RB", 31.3, 1997], ["2027 Early 4th", "RDP", 0.0, 1994], ["Elijah Arroyo", "TE", 23.6, 1988], ["Cade Otton", "TE", 27.6, 1982], ["2029 Late 3rd", "RDP", 0.0, 1982], ["Jaylin Lane", "WR", 24.5, 1977], ["MarShawn Lloyd", "RB", 25.8, 1968], ["Colby Parkinson", "TE", 27.8, 1959], ["Bryce Lance", "WR", 24.2, 1957], ["Tyquan Thornton", "WR", 26.2, 1956], ["Savion Williams", "WR", 25.0, 1956], ["Xavier Hutchinson", "WR", 26.4, 1954], ["Marvin Mims", "WR", 24.6, 1934], ["Konata Mumpfield", "WR", 24.0, 1924], ["Jerry Jeudy", "WR", 27.5, 1918], ["Roschon Johnson", "RB", 25.8, 1917], ["Zavion Thomas", "WR", 22.7, 1912], ["Demond Claiborne", "RB", 23.1, 1910], ["Skyler Bell", "WR", 24.4, 1906], ["Sean Tucker", "RB", 25.0, 1899], ["2027 Mid 4th", "RDP", 0.0, 1884], ["Keenan Allen", "WR", 34.5, 1878], ["Max Klare", "TE", 23.3, 1875], ["Cole Kmet", "TE", 27.7, 1872], ["Tyler Higbee", "TE", 33.8, 1865], ["Drew Lock", "QB", 30.0, 1860], ["Trevor Etienne", "RB", 22.3, 1849], ["Cade Klubnik", "QB", 23.1, 1849], ["Kaleb Johnson", "RB", 23.2, 1833], ["Jahan Dotson", "WR", 26.6, 1820], ["2028 Early 4th", "RDP", 0.0, 1817], ["Jalen Nailor", "WR", 27.7, 1810], ["Adam Randall", "RB", 22.3, 1804], ["Isaiah Davis", "RB", 24.7, 1803], ["2027 Late 4th", "RDP", 0.0, 1790], ["DJ Giddens", "RB", 23.2, 1788], ["Ray Davis", "RB", 27.0, 1787], ["Kalif Raymond", "WR", 32.2, 1783], ["Isaiah Bond", "WR", 22.6, 1780], ["Jalen Royals", "WR", 23.7, 1778], ["Kaytron Allen", "RB", 23.8, 1775], ["Tyler Huntley", "QB", 28.8, 1774], ["Will Shipley", "RB", 24.2, 1771], ["Jordan James", "RB", 22.6, 1759], ["Oscar Delp", "TE", 23.3, 1749], ["Dohnte Meyers", "WR", 26.3, 1727], ["2028 Mid 4th", "RDP", 0.0, 1716], ["Bam Knight", "RB", 25.6, 1715], ["Raheim Sanders", "RB", 24.4, 1712], ["Justice Hill", "RB", 29.0, 1707], ["Dont'e Thornton", "WR", 23.9, 1707], ["2029 Early 4th", "RDP", 0.0, 1700], ["Jordan Watkins", "WR", 24.7, 1691], ["Devin Singletary", "RB", 29.2, 1681], ["Dawson Knox", "TE", 30.0, 1672], ["Xavier Legette", "WR", 25.8, 1663], ["Jauan Jennings", "WR", 29.3, 1654], ["Darren Waller", "TE", 34.2, 1641], ["Theo Johnson", "TE", 25.7, 1640], ["Tommy Tremble", "TE", 26.4, 1630], ["Cooper Kupp", "WR", 33.4, 1598], ["Kendrick Bourne", "WR", 31.3, 1594], ["George Holani", "RB", 26.9, 1593], ["Samaje Perine", "RB", 31.2, 1592], ["Dameon Pierce", "RB", 26.7, 1587], ["Tyson Bagent", "QB", 26.4, 1569], ["Trey Benson", "RB", 24.3, 1556], ["Sione Vaki", "RB", 25.3, 1554], ["LeQuint Allen", "RB", 22.3, 1553], ["2028 Late 4th", "RDP", 0.0, 1547], ["Tyler Goodson", "RB", 26.0, 1538], ["Will Howard", "QB", 25.1, 1536], ["Isaiah Williams", "WR", 25.8, 1530], ["Noah Gray", "TE", 27.5, 1521], ["Evan Engram", "TE", 32.2, 1517], ["Matthew Hibner", "TE", 24.7, 1511], ["2029 Mid 4th", "RDP", 0.0, 1495], ["Deion Burks", "WR", 23.8, 1493], ["Barion Brown", "WR", 22.9, 1482], ["Devontez Walker", "WR", 25.4, 1463], ["Ja'Tavion Sanders", "TE", 23.6, 1459], ["Jaleel McLaughlin", "RB", 26.2, 1458], ["Christian Kirk", "WR", 30.0, 1455], ["Joshua Palmer", "WR", 27.1, 1446], ["Eli Heidenreich", "RB", 23.4, 1439], ["Brenen Thompson", "WR", 23.3, 1430], ["Ty Johnson", "RB", 29.1, 1425], ["Devin Neal", "RB", 23.2, 1414], ["Jaydon Blue", "RB", 22.8, 1412], ["David Njoku", "TE", 30.3, 1395], ["Jake Tonges", "TE", 27.3, 1391], ["John Metchie", "WR", 26.3, 1377], ["Audric Estime", "RB", 23.2, 1376], ["Marcus Mariota", "QB", 33.0, 1375], ["Malik Benson", "WR", 24.1, 1367], ["Justin Fields", "QB", 27.7, 1362], ["Carson Wentz", "QB", 33.9, 1352], ["Mack Hollins", "WR", 33.2, 1350], ["Tutu Atwell", "WR", 27.1, 1345], ["Jameis Winston", "QB", 32.8, 1341], ["Brashard Smith", "RB", 23.6, 1329], ["Jacob Cowing", "WR", 25.8, 1328], ["Noah Fant", "TE", 29.0, 1321], ["Taylen Green", "QB", 24.1, 1321], ["Darnell Mooney", "WR", 29.0, 1318], ["Corey Kiner", "RB", 24.8, 1316], ["Garrett Nussmeier", "QB", 24.8, 1316], ["Luke Musgrave", "TE", 26.2, 1315], ["Jordan Whittington", "WR", 26.1, 1303], ["Luke McCaffrey", "WR", 25.6, 1297], ["Tua Tagovailoa", "QB", 28.7, 1288], ["Riley Leonard", "QB", 24.2, 1288], ["2029 Late 4th", "RDP", 0.0, 1288], ["Sam Roush", "TE", 23.2, 1282], ["Isiah Pacheco", "RB", 27.7, 1277], ["Jahdae Walker", "WR", 24.4, 1276], ["Ben Sinnott", "TE", 24.4, 1266], ["Quinn Ewers", "QB", 23.5, 1266], ["Brandon Aiyuk", "WR", 28.6, 1264], ["CJ Daniels", "WR", 24.8, 1249], ["Tanner McKee", "QB", 26.5, 1248], ["Justin Joly", "TE", 22.3, 1245], ["Andrei Iosivas", "WR", 27.1, 1232], ["Davis Allen", "TE", 25.8, 1209], ["Colbie Young", "WR", 24.3, 1206], ["Tahj Brooks", "RB", 24.5, 1188], ["Charlie Kolar", "TE", 27.7, 1174], ["KeAndre Lambert-Smith", "WR", 25.1, 1173], ["Marlin Klein", "TE", 24.1, 1173], ["Dyami Brown", "WR", 27.0, 1163], ["Tyreek Hill", "WR", 32.7, 1151], ["Malik Davis", "RB", 28.0, 1149], ["Trey Palmer", "WR", 25.6, 1138], ["Erick All", "TE", 26.2, 1137], ["Rasheen Ali", "RB", 25.7, 1136], ["Elijah Higgins", "TE", 26.0, 1131], ["Cade Stover", "TE", 26.4, 1131], ["Tai Felton", "WR", 23.6, 1128], ["Jack Strand", "QB", 22.4, 1125], ["Kameron Johnson", "WR", 24.6, 1123], ["Jack Endries", "TE", 22.6, 1119], ["Chris Brooks", "RB", 26.8, 1118], ["Malachi Corley", "WR", 24.6, 1116], ["Jarquez Hunter", "RB", 23.9, 1108], ["Gardner Minshew", "QB", 30.5, 1106], ["Skyy Moore", "WR", 26.2, 1106], ["J'Mari Taylor", "RB", 24.8, 1103], ["Calvin Austin III", "WR", 27.6, 1095], ["Cedric Tillman", "WR", 26.6, 1090], ["Jalen Tolbert", "WR", 27.7, 1089], ["Mitchell Evans", "TE", 23.6, 1082], ["Elijah Moore", "WR", 26.6, 1079], ["Demarcus Robinson", "WR", 32.1, 1073], ["Austin Ekeler", "RB", 31.5, 1056], ["Jonathan Mingo", "WR", 25.6, 1056], ["Dillon Gabriel", "QB", 25.9, 1054], ["Cody White", "WR", 28.0, 1049], ["Spencer Rattler", "QB", 26.1, 1046], ["Olamide Zaccheaus", "WR", 29.3, 1036], ["James Conner", "RB", 31.5, 1030], ["Will Kacmarek", "TE", 23.7, 1029], ["Isaac Guerendo", "RB", 26.4, 1012], ["Daniel Bellinger", "TE", 26.1, 998], ["Elijah Mitchell", "RB", 28.5, 997], ["Jimmy Horn", "WR", 24.2, 991], ["Josh Cuevas", "TE", 23.2, 990], ["KaVontae Turpin", "WR", 30.3, 986], ["Jalin Hyatt", "WR", 25.1, 986], ["Emari Demercado", "RB", 27.8, 986], ["Tyler Badie", "RB", 26.8, 980], ["Greg Dortch", "WR", 28.4, 961], ["Michael Trigg", "TE", 24.4, 956], ["Javon Baker", "WR", 24.7, 947], ["Reggie Virgil", "WR", 22.5, 913], ["David Bell", "WR", 25.9, 911], ["Bo Melton", "WR", 27.5, 899], ["Jacob Saylors", "RB", 25.7, 898], ["Marquise Brown", "WR", 29.4, 877], ["Xavier Restrepo", "WR", 24.6, 858], ["Calvin Ridley", "WR", 31.9, 840], ["Joe Fagnano", "QB", 25.6, 836], ["Jonnu Smith", "TE", 31.2, 833], ["Brandin Cooks", "WR", 33.1, 833], ["Tanner Koziol", "TE", 23.8, 833], ["Sam Howell", "QB", 26.2, 819], ["Khalil Herbert", "RB", 28.6, 807], ["Foster Moreau", "TE", 29.5, 803], ["Luke Schoonmaker", "TE", 28.1, 795], ["Trey Lance", "QB", 26.5, 794], ["Davis Mills", "QB", 28.0, 784], ["Dylan Laube", "RB", 26.9, 778], ["Brock Wright", "TE", 28.0, 777], ["Stetson Bennett", "QB", 29.0, 764], ["Kalel Mullings", "RB", 24.1, 750], ["Kendall Milton", "RB", 24.7, 748], ["Gabriel Davis", "WR", 27.6, 743], ["Kyle McCord", "QB", 24.1, 743], ["Cole Payton", "QB", 24.0, 737], ["Frank Gore Jr.", "RB", 24.7, 704], ["Arian Smith", "WR", 25.1, 694], ["Michael Carter", "RB", 27.5, 679], ["Israel Abanikanda", "RB", 24.1, 678], ["Jared Wiley", "TE", 26.0, 650], ["AJ Dillon", "RB", 28.5, 649], ["Brevin Jordan", "TE", 26.3, 649], ["Jerome Ford", "RB", 27.2, 636], ["Jam Miller", "RB", 22.5, 632], ["Najee Harris", "RB", 28.7, 612], ["Nick Westbrook-Ikhine", "WR", 29.6, 595], ["Mason Tipton", "WR", 26.1, 591], ["Zach Ertz", "TE", 36.0, 580], ["Xavier Gipson", "WR", 25.7, 580], ["Johnny Wilson", "WR", 25.6, 532], ["Tyler Johnson", "WR", 28.2, 523], ["Phil Mafah", "RB", 24.0, 523], ["Deuce Vaughn", "RB", 25.0, 514], ["LaJohntay Wester", "WR", 24.6, 512], ["Kenny Pickett", "QB", 28.4, 508], ["Tyrell Shavers", "WR", 27.2, 500], ["Lil'Jordan Humphrey", "WR", 28.6, 492], ["Jawhar Jordan", "RB", 27.2, 491], ["Jeremy Ruckert", "TE", 26.2, 488], ["Jeremy McNichols", "RB", 30.9, 477], ["Sincere McCormick", "RB", 26.2, 469], ["Josh Oliver", "TE", 29.6, 467], ["Isaiah Hodgins", "WR", 28.0, 466], ["Le'Veon Moss", "RB", 24.0, 465], ["Derius Davis", "WR", 26.2, 461], ["Ben Skowronek", "WR", 29.4, 456], ["Mecole Hardman", "WR", 28.7, 452], ["Tylan Wallace", "WR", 27.5, 449], ["Ty Chandler", "RB", 28.5, 449]]}}</script>
+<script>
+  const data = JSON.parse(document.querySelector('#league-data').textContent);
+  const content = document.querySelector('#content');
+  const tabs = [...document.querySelectorAll('[data-view]')];
+  const teams = new Map(data.teams.map(team => [team.id, team]));
+  const name = id => teams.get(id)?.name ?? `Team ${id}`;
+  const html = value => String(value).replace(/[&<>"']/g, char => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[char]));
+  const teamButton = id => `<button class="team" data-team="${id}">${html(name(id))}</button>`;
+  const points = (value, digits = 2) => value == null ? '—' : value.toLocaleString(undefined, {
+    minimumFractionDigits:digits, maximumFractionDigits:digits
+  });
+  const record = team => `${team.wins}–${team.losses}${team.ties ? `–${team.ties}` : ''}`;
+  const weeks = Object.keys(data.weeks).map(Number).sort((a, b) => b - a);
+  const state = {view:'standings', sort:'record', direction:-1, week:weeks[0], filter:'', team:data.teams[0]?.id};
+  document.title = `${data.name} · Dynasty Panel`;
+  document.querySelector('#league').textContent = data.name;
+  document.querySelector('#season').textContent = `${data.season} season · ${teams.size} teams`;
+  document.querySelector('#updated').textContent = `Sleeper data last synced ${new Date(data.updated).toLocaleString()}`;
+
+  function select(label, field, options, current) {
+    return `<label>${label}<select data-field="${field}">${options.map(([value, text]) =>
+      `<option value="${value}" ${String(value) === String(current) ? 'selected' : ''}>${html(text)}</option>`).join('')}</select></label>`;
+  }
+
+  function table(headers, rows) {
+    return `<div class="table" tabindex="0"><table><thead><tr>${headers.join('')}</tr></thead>
+      <tbody>${rows.join('')}</tbody></table></div>`;
+  }
+
+  function simpleTable(headers, rows) {
+    return table(headers.map(header => `<th scope="col">${header}</th>`), rows.map(row =>
+      `<tr>${row.map(cell => `<td>${html(cell)}</td>`).join('')}</tr>`));
+  }
+
+  const teamOptions = [...teams.values()].sort((a,b) => a.name.localeCompare(b.name)).map(team => [team.id, team.name]);
+  const winRate = team => (team.wins + team.ties / 2) / (team.wins + team.losses + team.ties || 1);
+  const standingsTiebreaker = (a, b) => b.pf - a.pf || a.name.localeCompare(b.name);
+  const compareStandings = (a, b) => winRate(b) - winRate(a) || standingsTiebreaker(a, b);
+
+  function standings() {
+    const labels = {name:'Team', record:'Record', pf:'Points for', pa:'Points against'};
+    const compare = (a, b) => {
+      if (state.sort === 'name') return a.name.localeCompare(b.name);
+      if (state.sort === 'record') return winRate(a) - winRate(b);
+      return a[state.sort] - b[state.sort];
+    };
+    const sorted = [...teams.values()].sort((a,b) => state.direction * compare(a,b) || standingsTiebreaker(a,b));
+    const headers = Object.entries(labels).map(([key, label]) => {
+      const active = key === state.sort;
+      const direction = state.direction === 1 ? 'ascending' : 'descending';
+      return `<th scope="col"${active ? ` aria-sort="${direction}"` : ''}><button data-sort="${key}">${label}${active ? (state.direction === 1 ? ' ↑' : ' ↓') : ''}</button></th>`;
+    });
+    return `<div class="heading"><div><h2>Standings</h2><p>Sort any column or select a team to see its roster and picks.</p></div></div>
+      ${table(headers, sorted.map(team => `<tr><td>${teamButton(team.id)}</td><td>${record(team)}</td><td>${points(team.pf)}</td><td>${points(team.pa)}</td></tr>`))}`;
+  }
+
+  function matchups() {
+    const games = (data.weeks[state.week] ?? []).filter(game =>
+      !state.filter || game.some(row => String(row.id) === state.filter));
+    return `<div class="heading"><div><h2>Matchups</h2><p>Browse weekly scores by team.</p></div>
+      <div class="filters">${select('Week','week', weeks.map(week => [week, `Week ${week}`]), state.week)}
+      ${select('Team','filter', [['','All teams'], ...teamOptions], state.filter)}</div></div>
+      ${games.length ? `<div class="cards">${games.map(game => `<article class="card">${game.map(row =>
+        `<div class="result">${teamButton(row.id)}<strong>${points(row.points)}</strong></div>`).join('')}</article>`).join('')}</div>`
+        : '<p>No matchups available for this selection.</p>'}${medianPanel()}`;
+  }
+
+  // Fixed fits from fit_variance.py. Coefficients are in squared PPR points.
+  const varianceCurves = {QB:[36.4098,1.5083], RB:[.6254,4.2599], WR:[6.8302,3.8625], TE:[2.4392,4.1774]};
+  const medianTrialCount = 10_000;
+  const medianForecasts = new Map();
+
+  function medianPanel() {
+    const model = data.medianModel;
+    if (!model || state.week >= model.playoffStart || !data.playoffModel.medianGame) return '';
+    const forecast = medianForecasts.get(state.week);
+    const isolated = forecast?.results?.teams.get(Number(state.isolate));
+    const metrics = isolated ? [
+      [forecast.final ? 'Final 11-team median' : 'Projected 11-team median', points(isolated.median)],
+      [forecast.final ? 'Final team score' : 'Projected team score', points(isolated.score)],
+      ['Chance to beat median', `${points(isolated.win * 100, 1)}%`],
+    ] : [];
+    const formulas = Object.entries(varianceCurves).map(([position, [intercept, slope]]) =>
+      `${position}: ${intercept.toFixed(4)} + ${slope.toFixed(4)}p`).join(' · ');
+    return `<section class="analytics"><div class="heading"><div><h3>Median</h3>
+      <p>Games in progress use full-game projections. Finished games use actual points.</p></div>
+      <div class="filters">${select('Isolate a team', 'isolate', [['','All teams'], ...teamOptions], state.isolate ?? '')}
+      <button data-run-median ${forecast?.loading ? 'disabled' : ''}>${forecast?.loading ? 'Loading…' : 'Calculate median'}</button></div></div>
+      ${forecast?.message ? `<p role="status">${html(forecast.message)}</p>` : ''}
+      ${metrics.length ? `<dl class="metrics">${metrics.map(([label, value]) =>
+        `<div class="card"><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>` : ''}
+      ${forecast?.results && !isolated ? '<p>Select a team to compare it with the other 11.</p>' : ''}
+      <p>Forecasts use ${medianTrialCount.toLocaleString()} Monte Carlo trials with independent player scores.
+      Ties count as half a win. Finished scores are evaluated directly.</p>
+      <p>Variance in squared PPR points, fitted from historical projection errors. For a nonzero RotoWire pregame projection,
+      <var>p</var> is the projected PPR score with a minimum input of 2. A zero projection has zero variance.</p>
+      <p>${formulas}</p></section>`;
+  }
+
+  function sampleMedian(lineups) {
+    const results = new Map(lineups.map(team => [team.id, {score:0, median:0, win:0}]));
+    const trials = lineups.some(team => team.players.length) ? medianTrialCount : 1;
+    for (let trial = 0; trial < trials; trial++) {
+      const scores = lineups.map(team => {
+        const score = team.players.reduce((total, player) => total + player.mean + player.sd * normalDraw(), team.fixed);
+        return {id:team.id, score:Math.round(score * 100)};
+      }).sort((a,b) => a.score - b.score);
+      const middle = scores.length / 2;
+      scores.forEach(({id, score}, index) => {
+        const otherMedian = scores[index < middle ? middle : middle - 1].score;
+        const result = results.get(id);
+        result.score += score;
+        result.median += otherMedian;
+        result.win += score === otherMedian ? .5 : Number(score > otherMedian);
+      });
+    }
+    for (const result of results.values()) {
+      result.score /= 100 * trials;
+      result.median /= 100 * trials;
+      result.win /= trials;
+    }
+    return {teams:results};
+  }
+
+  async function loadMedian(week) {
+    const {leagueId, lastScored, scoring, players} = data.medianModel;
+    const validate = lineups => {
+      const ids = new Set(lineups.map(team => team.id));
+      if (lineups.length !== teams.size || ids.size !== teams.size || ids.size % 2 ||
+          [...ids].some(id => !teams.has(id)) || lineups.some(team => !Number.isFinite(team.fixed))) {
+        throw Error('Complete scores for an even number of league teams are required.');
+      }
+      return lineups;
+    };
+    if (week <= lastScored) {
+      const lineups = (data.weeks[week] ?? []).flat().map(row => ({id:row.id, fixed:row.points, players:[]}));
+      return {results:sampleMedian(validate(lineups)), final:true};
+    }
+    async function sleeper(path) {
+      const response = await fetch(`https://api.sleeper.app/${path}`, {signal:AbortSignal.timeout(15000)});
+      if (!response.ok) throw Error('Sleeper could not refresh the matchup forecast. Try again shortly.');
+      return response.json();
+    }
+    const [matchups, schedule, projections] = await Promise.all([
+      sleeper(`v1/league/${leagueId}/matchups/${week}`),
+      sleeper(`schedule/nfl/regular/${data.season}`),
+      sleeper(`projections/nfl/${data.season}/${week}?season_type=regular`),
+    ]);
+    const games = new Map(schedule.filter(game => Number(game.week) === week).map(game => [String(game.game_id), game]));
+    if (!games.size) throw Error('The NFL schedule is unavailable for this week.');
+    const gameByTeam = new Map([...games.values()].flatMap(game => [[game.home,game], [game.away,game]]));
+    const projectionByPlayer = new Map();
+    for (const row of projections) {
+      if (row.company !== 'rotowire' || row.category !== 'proj' || !games.has(String(row.game_id))) continue;
+      const previous = projectionByPlayer.get(row.player_id);
+      if (!previous || row.last_modified > previous.last_modified) projectionByPlayer.set(row.player_id, row);
+    }
+    const lineups = matchups.filter(row => row.matchup_id != null).map(row => {
+      const team = {id:row.roster_id, fixed:row.custom_points ?? row.points, players:[]};
+      if (row.custom_points != null || [...games.values()].every(game => game.status === 'complete')) return team;
+      for (const [index, id] of row.starters.entries()) {
+        if (!id || id === '0') continue;
+        const projection = projectionByPlayer.get(id);
+        const metadata = players[id];
+        const game = games.get(String(projection?.game_id)) ?? gameByTeam.get(metadata?.[0]);
+        if (!game && metadata) continue;
+        if (game?.status === 'complete') continue;
+        const ppr = projection?.stats?.pts_ppr;
+        const curve = varianceCurves[projection?.player?.position ?? metadata?.[1]];
+        if (!Number.isFinite(ppr) || !curve) {
+          throw Error(`A usable RotoWire projection is missing for a starter on ${name(team.id)}.`);
+        }
+        const mean = Object.entries(scoring).reduce((total, [stat, weight]) =>
+          total + weight * (projection.stats[stat] ?? 0), 0);
+        team.fixed -= row.starters_points?.[index] ?? row.players_points?.[id] ?? 0;
+        team.players.push({mean, sd:ppr === 0 ? 0 : Math.sqrt(curve[0] + curve[1] * Math.max(2,ppr))});
+      }
+      return team;
+    });
+    return {results:sampleMedian(validate(lineups)), final:[...games.values()].every(game => game.status === 'complete')};
+  }
+
+  function leagueTeams() {
+    const team = teams.get(state.team);
+    const picks = data.picks.filter(pick => pick.owner === state.team)
+      .sort((a,b) => a.year - b.year || a.round - b.round || name(a.original).localeCompare(name(b.original)));
+    const playerCells = player =>
+      [player?.name ?? '—', player?.rank ?? '—', points(player?.total, 0), points(player?.average, 1)];
+    const pickCards = [1, 2, 3].map(offset => {
+      const year = data.season + offset;
+      const rows = picks.filter(pick => pick.year === year).map(pick => [pick.round, name(pick.original)]);
+      return `<section class="card"><h3>${year}</h3>${rows.length
+        ? simpleTable(['Round','Original team'], rows) : '<p>No picks available.</p>'}</section>`;
+    }).join('');
+    const headers = ['Player','Rank','TTL','AVG'];
+    const metrics = [
+      ['Average Points', team.analytics.average],
+      ['Starter Average Points', team.analytics.starterAverage],
+      ['Points Standard Deviation', team.analytics.variance == null ? null : Math.sqrt(team.analytics.variance)],
+    ];
+    return `<div class="heading"><div><h2>League Teams</h2><p>View roster and draft information for individual teams.</p></div>
+      <div class="filters">${select('Team','team', teamOptions, state.team)}</div></div>
+      <div class="assets"><section class="stack"><h3>Roster</h3>
+      <section class="card"><h3>Lineup</h3><p>Selected by season average. IR and taxi players are listed on the bench.</p>
+      ${simpleTable(['Slot', ...headers], team.lineup.map(({slot, player}) => [slot, ...playerCells(player)]))}</section>
+      <section class="card"><h3>Bench</h3>${team.bench.length ? simpleTable(headers, team.bench.map(playerCells))
+        : '<p>No bench players.</p>'}</section></section>
+      <section class="stack pick-years"><h3>Draft Picks</h3>${pickCards}
+      <p>Pick ownership uses Sleeper trades and the league’s current draft settings.</p></section></div>
+      <section class="analytics"><h3>Analytics</h3><dl class="metrics">${metrics.map(([label, value]) =>
+        `<div class="card"><dt>${label}</dt><dd>${points(value, 1)}</dd></div>`).join('')}</dl></section>`;
+  }
+
+  function draft() {
+    const year = data.season + 1;
+    const order = [...teams.values()].sort(compareStandings).reverse();
+    const picks = data.picks.filter(pick => pick.year === year);
+    const owners = new Map(picks.map(pick => [`${pick.round}:${pick.original}`, pick.owner]));
+    const rounds = [...new Set(picks.map(pick => pick.round))].sort((a, b) => a - b);
+    const labels = order.map(team => `<div class="draft-label" tabindex="0" data-draft-team="${team.id}"
+      aria-label="Highlight picks owned by ${html(team.name)}"><span>${html(team.name)}</span></div>`).join('');
+    const tiles = rounds.flatMap(round => order.map((team, index) => {
+      const owner = owners.get(`${round}:${team.id}`);
+      const ownerName = owner == null ? 'Unassigned' : name(owner);
+      const description = html(`Pick ${round}.${String(index + 1).padStart(2, '0')}, originally ${team.name}, owned by ${ownerName}`);
+      return `<div class="draft-pick" data-owner="${owner ?? ''}" role="listitem" aria-label="${description}"
+        title="${description}"><span>${html(ownerName)}</span></div>`;
+    })).join('');
+    return `<div class="heading"><div><h2>${year} Draft Order</h2>
+      <p>Projected from the standings in reverse order. Each tile shows the current pick owner.</p></div></div>
+      <div class="draft-scroll" tabindex="0" role="region" aria-label="Draft board">
+        <div class="draft-board" role="list" style="--teams:${order.length}">${labels}${tiles}</div>
+      </div>`;
+  }
+
+  function updateDraftFade(board) {
+    board.toggleAttribute('data-fade-left', board.scrollLeft > 1);
+    board.toggleAttribute('data-fade-right', board.scrollLeft + board.clientWidth < board.scrollWidth - 1);
+  }
+
+  const trialCount = 10_000;
+  let varianceShrinkage = 0;
+  let playoffResults;
+  const normalDraw = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+
+  function playoffModelReady() {
+    const model = data.playoffModel;
+    return model.supported
+      && data.teams.every(team => team.analytics.average != null && team.analytics.variance != null)
+      && model.schedule.every(week => {
+        const ids = week.flat();
+        return week.every(game => game.length === 2) && ids.length === teams.size
+          && new Set(ids).size === teams.size && ids.every(id => teams.has(id));
+      });
+  }
+
+  function simulatePlayoffs() {
+    const model = data.playoffModel;
+    const counts = new Map(data.teams.map(team => [team.id, {id:team.id, champion:0, bye:0, qualified:0, winRate:0}]));
+    const completedScores = new Map(data.teams.map(team => [team.id, 0]));
+    for (const week of weeks) {
+      if (week > data.medianModel.lastScored || week >= data.medianModel.playoffStart) continue;
+      for (const {id, points} of data.weeks[week].flat()) {
+        if (completedScores.has(id) && points != null) completedScores.set(id, completedScores.get(id) + 1);
+      }
+    }
+    const degreesOfFreedom = team => completedScores.get(team.id) - 1;
+    const totalDegrees = data.teams.reduce((sum, team) => sum + degreesOfFreedom(team), 0);
+    const pooledVariance = data.teams.reduce((sum, team) =>
+      sum + degreesOfFreedom(team) * team.analytics.variance, 0) / totalDegrees;
+    const deviation = new Map(data.teams.map(team => {
+      const degrees = degreesOfFreedom(team);
+      const variance = varianceShrinkage === 0 ? team.analytics.variance :
+        (degrees * team.analytics.variance + varianceShrinkage * pooledVariance) / (degrees + varianceShrinkage);
+      return [team.id, Math.sqrt(variance)];
+    }));
+    const remainingGames = model.schedule.length * (model.medianGame ? 2 : 1);
+    const cutoffs = {playoff:0, bye:0};
+    function draw(id) {
+      const normal = normalDraw();
+      return Math.max(0, Math.round((teams.get(id).analytics.average + normal * deviation.get(id)) * 100));
+    }
+
+    for (let trial = 0; trial < trialCount; trial++) {
+      const standings = new Map(data.teams.map(team => [team.id, {
+        id:team.id, effectiveWins:team.wins + team.ties / 2,
+        games:team.wins + team.losses + team.ties + remainingGames, pf:Math.round(team.pf * 100),
+        pa:Math.round(team.pa * 100), tiebreak:Math.random(),
+      }]));
+      for (const week of model.schedule) {
+        const scores = [];
+        for (const [home, away] of week) {
+          const a = standings.get(home), b = standings.get(away);
+          const x = draw(home), y = draw(away);
+          a.effectiveWins += x === y ? .5 : Number(x > y);
+          b.effectiveWins += x === y ? .5 : Number(y > x);
+          a.pf += x;
+          b.pf += y;
+          a.pa += y;
+          b.pa += x;
+          scores.push({team:a, score:x}, {team:b, score:y});
+        }
+        if (model.medianGame) {
+          scores.sort((a,b) => a.score - b.score);
+          const middle = scores.length / 2;
+          const median = (scores[middle - 1].score + scores[middle].score) / 2;
+          scores.forEach(({team, score}) => {
+            team.effectiveWins += score === median ? .5 : Number(score > median);
+          });
+        }
+      }
+      const ranked = [...standings.values()];
+      for (const team of ranked) {
+        team.winRate = team.effectiveWins / team.games;
+        counts.get(team.id).winRate += team.winRate;
+      }
+      ranked.sort((a,b) => b.winRate - a.winRate || b.pf - a.pf || b.pa - a.pa || a.tiebreak - b.tiebreak);
+      const seeds = ranked.slice(0, 6);
+      cutoffs.playoff += seeds[5].winRate;
+      cutoffs.bye += seeds[1].winRate;
+      seeds.forEach(({id}, seed) => {
+        counts.get(id).qualified++;
+        if (seed < 2) counts.get(id).bye++;
+      });
+      const winner = (a, b) => {
+        const difference = draw(seeds[a].id) - draw(seeds[b].id);
+        return difference === 0 ? Math.min(a,b) : difference > 0 ? a : b;
+      };
+      const winner36 = winner(2, 5), winner45 = winner(3, 4);
+      const opponent1 = model.reseed ? Math.max(winner36, winner45) : winner45;
+      const opponent2 = model.reseed ? Math.min(winner36, winner45) : winner36;
+      const champion = winner(winner(0, opponent1), winner(1, opponent2));
+      counts.get(seeds[champion].id).champion++;
+    }
+    const {wins, losses, ties} = data.teams[0];
+    const games = wins + losses + ties + remainingGames;
+    return {rows:[...teams.values()].sort(compareStandings).map(team => counts.get(team.id)), cutoffs, games,
+      varianceShrinkage};
+  }
+
+  function playoffs() {
+    const ready = playoffModelReady();
+    const percent = count => `${(100 * count / trialCount).toFixed(1)}%`;
+    const cutoffRecord = rateTotal => {
+      const games = playoffResults.games;
+      const wins = Math.round(10 * games * rateTotal / trialCount) / 10;
+      return `${points(wins, 1)} – ${points(games - wins, 1)}`;
+    };
+    return `<div class="heading"><div><h2>Playoffs</h2>
+      <p>Simulate ${trialCount.toLocaleString()} seasons using completed weekly scores and the remaining schedule.</p></div>
+      <div class="filters"><label for="variance-shrinkage">Variance shrinkage (k)
+      <input id="variance-shrinkage" type="range" min="0" max="10" step="1" value="${varianceShrinkage}">
+      </label><output for="variance-shrinkage">${varianceShrinkage}</output>
+      <button data-run-playoffs ${ready ? '' : 'disabled'}>Run Monte Carlo</button></div></div>
+      <p>Higher k pulls scoring variance toward the league’s pooled variance. A setting of 0 uses the team’s observed variance.
+      Weeks without final scores are simulated in full.</p>
+      ${!ready ? '<p>Projections require a complete remaining schedule, at least two completed weeks of scores per team, and a supported six-team bracket before the playoffs begin.</p>'
+      : playoffResults ? `<p>Results for k = ${playoffResults.varianceShrinkage}.</p>
+        ${simpleTable(['Team','Championship','Bye Qualification','Playoff Qualification','Expected Win Rate'],
+        playoffResults.rows.map(row => [name(row.id), percent(row.champion), percent(row.bye), percent(row.qualified), percent(row.winRate)]))}
+        <section class="analytics"><dl class="metrics">
+        <div class="card"><dt>Projected Playoff Cutoff</dt><dd>${cutoffRecord(playoffResults.cutoffs.playoff)}</dd></div>
+        <div class="card"><dt>Projected Bye Cutoff</dt><dd>${cutoffRecord(playoffResults.cutoffs.bye)}</dd></div>
+        </dl><p>Average records of the 6th and 2nd seeds across all trials. Ties count as half a win and half a loss.</p></section>`
+        : '<p>Run the simulation to see estimated probabilities.</p>'}`;
+  }
+
+  const assetKey = name => name.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const playerKey = name => assetKey(name.replace(/\s+(?:Jr\.?|Sr\.?|II|III|IV|V)$/i, ''));
+  const ktcAssets = new Map((data.ktc?.assets ?? []).map(([name, position, age, value]) =>
+    [assetKey(name), {position, age:age > 0 ? age : null, value}]));
+  const playerAliases = new Map([['kennygainwell','kennethgainwell'], ['chigokonkwo','chigoziemokonkwo']]);
+  const ktcPlayers = new Map();
+  for (const [name, position] of data.ktc?.assets ?? []) {
+    if (position === 'RDP') continue;
+    const key = playerKey(name);
+    ktcPlayers.set(key, ktcPlayers.has(key) ? null : ktcAssets.get(assetKey(name)));
+  }
+  const projectedDraftOrder = [...teams.values()].sort(compareStandings).reverse();
+  const teamValues = projectedDraftOrder.map(team => {
+    const assets = [...team.lineup.map(row => row.player).filter(Boolean), ...team.bench].map(player => {
+      const key = playerKey(player.name);
+      const match = ktcAssets.get(assetKey(player.name)) ?? ktcPlayers.get(playerAliases.get(key) ?? key);
+      return {name:player.name, type:match?.position ?? 'Player', age:match?.age, value:match?.value};
+    });
+    for (const pick of data.picks.filter(pick => pick.owner === team.id)) {
+      const slot = projectedDraftOrder.findIndex(original => original.id === pick.original);
+      const tier = pick.year === data.season + 1 && slot >= 0 ?
+        ['Early','Mid','Late'][Math.floor(3 * slot / projectedDraftOrder.length)] : 'Mid';
+      const round = ['1st','2nd','3rd','4th'][pick.round - 1] ?? `${pick.round}th`;
+      const match = ktcAssets.get(assetKey(`${pick.year} ${tier} ${round}`));
+      assets.push({name:`${pick.year} ${tier} ${round} · ${name(pick.original)}`, type:'Pick',
+        age:22 - (pick.year - data.season), value:match?.value});
+    }
+    assets.sort((a,b) => (b.value ?? -1) - (a.value ?? -1) || a.name.localeCompare(b.name));
+    const total = assets.reduce((sum, asset) => sum + (asset.value ?? 0), 0);
+    const aged = assets.filter(asset => asset.age != null && asset.value != null);
+    const ageWeight = aged.reduce((sum, asset) => sum + asset.value, 0);
+    const age = ageWeight ? aged.reduce((sum, asset) => sum + asset.age * asset.value, 0) / ageWeight : null;
+    return {id:team.id, assets, total, age, unvalued:assets.filter(asset => asset.value == null).length};
+  });
+
+  function valueChart(selected) {
+    const plotted = teamValues.filter(team => team.age != null);
+    if (!plotted.length) return '';
+    const minAge = Math.floor(Math.min(...plotted.map(team => team.age)) * 2) / 2;
+    const maxAge = Math.max(minAge + 1, Math.ceil(Math.max(...plotted.map(team => team.age)) * 2) / 2);
+    const maxValue = Math.max(...teamValues.map(team => team.total));
+    const x = percent => 95 + 640 * (percent - 50) / 50;
+    const y = age => 305 - 275 * (age - minAge) / (maxAge - minAge);
+    const grid = Array.from({length:6}, (_, index) => {
+      const age = minAge + (maxAge - minAge) * index / 5;
+      const percent = 50 + index * 10;
+      return `<line x1="${x(percent)}" y1="30" x2="${x(percent)}" y2="305"/><text x="${x(percent)}" y="330" text-anchor="middle">${percent}%</text>
+        <line x1="95" y1="${y(age)}" x2="735" y2="${y(age)}"/><text x="85" y="${y(age) + 5}" text-anchor="end">${points(age, 2)}</text>`;
+    }).join('');
+    return `<svg class="value-chart" viewBox="0 0 770 375" role="group" aria-label="Team value by value-weighted age">
+      ${grid}<text x="415" y="360" text-anchor="middle">KTC value relative to league leader</text>
+      <text transform="translate(20 168) rotate(-90)" text-anchor="middle">Value-weighted age</text>
+      ${plotted.filter(team => team.total >= maxValue / 2).map(team => {
+        const percent = 100 * team.total / maxValue;
+        const description = html(`${name(team.id)}, ${points(percent, 1)}% of leader’s value, weighted age ${points(team.age, 2)}`);
+        return `<circle role="button" tabindex="0" data-value-team="${team.id}" aria-pressed="${team.id === selected}"
+          aria-label="${description}" cx="${x(percent)}" cy="${y(team.age)}" r="${team.id === selected ? 9 : 7}"><title>${description}</title></circle>`;
+      }).join('')}</svg>`;
+  }
+
+  function tradeValues() {
+    if (!data.ktc) return '<h2>Trade Values</h2><p>The KTC snapshot is unavailable.</p>';
+    const selected = state.valueTeam ?? state.team;
+    const team = teamValues.find(team => team.id === selected);
+    return `<div class="heading"><div><h2>Trade Values</h2>
+      <p>Crowdsourced Superflex values from <a href="https://keeptradecut.com/dynasty-rankings">KeepTradeCut</a>,
+      captured ${new Date(data.ktc.updated).toLocaleDateString()}.</p></div>
+      ${select('Team','valueTeam',teamOptions,selected)}</div>
+      ${valueChart(selected)}
+      <div class="heading"><div><h3>${html(name(selected))}</h3>
+      <p>${points(team.total, 0)} total KTC value · ${points(team.age, 2)} value-weighted age
+      · ${team.unvalued} assets without a KTC match</p></div></div>
+      ${simpleTable(['Asset','Type','Age','KTC value'], team.assets.map(asset =>
+        [asset.name, asset.type, points(asset.age, asset.type === 'Pick' ? 0 : 1), points(asset.value, 0)]))}
+      <p>Next-draft pick tiers use projected draft order. Later picks use the mid-round value.
+      Pick ages start at 21 for the next draft and drop by one per year.
+      Total value sums matched assets. Weighted age uses matched values with a known age.</p>`;
+  }
+
+  function render(focusSelector) {
+    tabs.forEach(tab => {
+      if (tab.dataset.view === state.view) tab.setAttribute('aria-current', 'page');
+      else tab.removeAttribute('aria-current');
+    });
+    content.innerHTML = {standings, matchups, teams:leagueTeams, draft, playoffs, values:tradeValues}[state.view]();
+    const board = content.querySelector('.draft-scroll');
+    if (board) {
+      updateDraftFade(board);
+      board.addEventListener('scroll', () => updateDraftFade(board), {passive:true});
+      const picks = board.querySelectorAll('.draft-pick');
+      const highlight = () => {
+        const label = board.querySelector('.draft-label:hover') ?? board.querySelector('.draft-label:focus-visible');
+        picks.forEach(pick => pick.toggleAttribute('data-highlighted', pick.dataset.owner === label?.dataset.draftTeam));
+      };
+      board.querySelectorAll('.draft-label').forEach(label => {
+        for (const event of ['pointerenter', 'pointerleave', 'focus', 'blur']) {
+          label.addEventListener(event, () => requestAnimationFrame(highlight));
+        }
+      });
+    }
+    if (focusSelector) content.querySelector(focusSelector)?.focus();
+  }
+
+  tabs.forEach(tab => tab.addEventListener('click', () => {
+    state.view = tab.dataset.view;
+    render();
+  }));
+  content.addEventListener('click', async event => {
+    const point = event.target.closest('[data-value-team]');
+    if (point) {
+      state.valueTeam = Number(point.dataset.valueTeam);
+      render(`[data-value-team="${state.valueTeam}"]`);
+      return;
+    }
+    const button = event.target.closest('button');
+    if (!button) return;
+    const {sort, team} = button.dataset;
+    if (button.hasAttribute('data-run-median')) {
+      const week = state.week;
+      medianForecasts.set(week, {loading:true});
+      render();
+      try {
+        medianForecasts.set(week, await loadMedian(week));
+      } catch (error) {
+        medianForecasts.set(week, {message:error.message});
+      }
+      if (state.view === 'matchups' && state.week === week) render('[data-run-median]');
+    } else if (button.hasAttribute('data-run-playoffs')) {
+      playoffResults = simulatePlayoffs();
+      render('[data-run-playoffs]');
+    } else if (sort) {
+      state.direction = state.sort === sort ? -state.direction : sort === 'name' ? 1 : -1;
+      state.sort = sort;
+      render(`[data-sort="${sort}"]`);
+    } else if (team) {
+      state.team = Number(team);
+      state.view = 'teams';
+      render('[data-field="team"]');
+    }
+  });
+  content.addEventListener('keydown', event => {
+    if (!event.target.matches('[data-value-team]') || !['Enter', ' '].includes(event.key)) return;
+    event.preventDefault();
+    state.valueTeam = Number(event.target.dataset.valueTeam);
+    render(`[data-value-team="${state.valueTeam}"]`);
+  });
+  content.addEventListener('input', event => {
+    if (event.target.id !== 'variance-shrinkage') return;
+    varianceShrinkage = event.target.valueAsNumber;
+    content.querySelector('output[for="variance-shrinkage"]').value = varianceShrinkage;
+  });
+  content.addEventListener('change', event => {
+    const {field} = event.target.dataset;
+    if (!field) return;
+    state[field] = field === 'filter' ? event.target.value : Number(event.target.value);
+    render(`[data-field="${field}"]`);
+  });
+  window.addEventListener('resize', () => {
+    const board = content.querySelector('.draft-scroll');
+    if (board) updateDraftFade(board);
+  });
+  render();
+</script>
+</body>
+</html>
