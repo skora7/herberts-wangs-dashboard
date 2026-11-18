@@ -2,7 +2,7 @@ name: Refresh and publish dashboard
 
 on:
   schedule:
-    - cron: '48 2,14 * * *'
+    - cron: '48 0,14 * * *'
       timezone: America/New_York
   workflow_dispatch:
   push:
