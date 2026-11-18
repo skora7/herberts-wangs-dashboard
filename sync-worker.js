@@ -3,23 +3,29 @@ import {loadPyodide} from 'https://cdn.jsdelivr.net/pyodide/v314.0.8/full/pyodid
 try {
   const [python, source] = await Promise.all([loadPyodide(), fetch('./build.py', {cache:'no-cache'})]);
   if (!source.ok) throw Error(`Could not load build.py (HTTP ${source.status}).`);
+  // Run the same snapshot builder used by the CLI with browser-backed HTTP requests.
   python.FS.writeFile('build.py', await source.text());
   const payload = await python.runPythonAsync(`
 import asyncio
 import json
 from js import AbortSignal
 from pyodide.http import pyfetch
-from build import build_snapshots
+from build import (
+    MAX_CONCURRENT_REQUESTS,
+    REQUEST_TIMEOUT_SECONDS,
+    SLEEPER_API_URL,
+    build_snapshots,
+)
 
 async def sync_snapshots():
-    request_slots = asyncio.Semaphore(6)
+    request_slots = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
     async def fetch_json(path):
         async with request_slots:
             response = await pyfetch(
-                f"https://api.sleeper.app/{path}",
+                f"{SLEEPER_API_URL}/{path}",
                 cache="no-store",
-                signal=AbortSignal.timeout(30000),
+                signal=AbortSignal.timeout(REQUEST_TIMEOUT_SECONDS * 1000),
             )
             response.raise_for_status()
             return await response.json()

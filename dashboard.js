@@ -1,4 +1,11 @@
+import {
+  medianTrialCount, postseasonsPerTrial, postseasonTrialCount, sampleMedian, simulateSeason, trialCount,
+} from './simulations.js';
+
 const sessionSnapshotKey = 'dashboard-builder-snapshots-v1';
+const lastRegularSeasonWeek = 14;
+const lineupSlotLabels = ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'TE', 'FLEX1', 'FLEX2', 'SUPERFLEX'];
+const defaultDeviationPercent = 20;
 let dashboardEvents;
 
 async function syncSleeper() {
@@ -14,24 +21,22 @@ async function syncSleeper() {
 }
 
 async function publishedSnapshots() {
-  const projectionRequest = fetch('./data/projections.json', {cache:'no-cache'})
+  const optionalSnapshot = path => fetch(path, {cache:'no-cache'})
     .then(response => response.ok ? response.json() : null)
     .catch(() => null);
-  const lineupRequest = fetch('./data/lineups.json', {cache:'no-cache'})
-    .then(response => response.ok ? response.json() : null)
-    .catch(() => null);
+  const projectionRequest = optionalSnapshot('./data/projections.json');
+  const lineupRequest = optionalSnapshot('./data/lineups.json');
   const response = await fetch('./data/sleeper.json', {cache:'no-cache'});
   if (!response.ok) throw Error('Could not load the published Sleeper snapshot.');
   const data = await response.json();
   return {league: data, projections: await projectionRequest, lineups: await lineupRequest};
 }
 
-async function startDashboard(snapshots, initialView) {
+function startDashboard(snapshots, initialView) {
   const {league: data, projections: projectionSnapshot, lineups: lineupSnapshot} = snapshots;
-  if (!document.querySelector('[data-view="values"]').hidden) {
-    const ktcResponse = await fetch('./ktc_snapshot.json');
-    if (ktcResponse.ok) data.ktc = await ktcResponse.json();
-  }
+  const projectionWeeks = projectionSnapshot?.season === data.season ? projectionSnapshot.weeks : null;
+  const lineupWeeks = lineupSnapshot?.season === data.season ? lineupSnapshot.weeks : null;
+  // A fresh snapshot gets fresh state and event handlers, including after a manual sync.
   dashboardEvents?.abort();
   dashboardEvents = new AbortController();
   const {signal} = dashboardEvents;
@@ -49,13 +54,16 @@ async function startDashboard(snapshots, initialView) {
   });
   const record = team => `${team.wins}–${team.losses}${team.ties ? `–${team.ties}` : ''}`;
   const weeks = Object.keys(data.weeks).map(Number).sort((a, b) => b - a);
-  const matchupWeeks = Array.from({length:14}, (_, index) => 14 - index);
+  const matchupWeeks = Array.from({length:lastRegularSeasonWeek}, (_, index) => lastRegularSeasonWeek - index);
   const currentWeek = data.currentWeek ?? weeks[0] ?? 1;
+  const selectedWeek = Math.min(lastRegularSeasonWeek, currentWeek);
   const view = tabs.find(tab => !tab.hidden && tab.dataset.view === initialView)?.dataset.view ?? 'standings';
-  const state = {view, sort:'record', direction:-1, week:Math.min(14, currentWeek), team:data.teams[0]?.id};
   const teamSections = ['Assets', 'Stats', 'Lineups'];
-  state.teamSection = 'Assets';
-  state.lineupWeek = state.week;
+  const teamOptions = [...teams.values()].sort((a,b) => a.name.localeCompare(b.name)).map(team => [team.id, team.name]);
+  const state = {
+    view, sort:'record', direction:-1, week:selectedWeek, isolate:teamOptions[0]?.[0],
+    team:data.teams[0]?.id, teamSection:'Assets', lineupWeek:selectedWeek, pickCoverage:80,
+  };
   document.title = `${data.name} · Dynasty Dashboard`;
   document.querySelector('#league').textContent = data.name;
   document.querySelector('#season').textContent = `${data.season} season · ${teams.size} teams`;
@@ -71,13 +79,13 @@ async function startDashboard(snapshots, initialView) {
       <tbody>${rows.join('')}</tbody></table></div>`;
   }
 
+  const columnHeaders = labels => labels.map(label => `<th scope="col">${html(label)}</th>`);
+
   function simpleTable(headers, rows) {
-    return table(headers.map(header => `<th scope="col">${header}</th>`), rows.map(row =>
+    return table(columnHeaders(headers), rows.map(row =>
       `<tr>${row.map(cell => `<td>${html(cell)}</td>`).join('')}</tr>`));
   }
 
-  const teamOptions = [...teams.values()].sort((a,b) => a.name.localeCompare(b.name)).map(team => [team.id, team.name]);
-  state.isolate = teamOptions[0]?.[0];
   const winRate = team => (team.wins + team.ties / 2) / (team.wins + team.losses + team.ties || 1);
   const standingsTiebreaker = (a, b) => b.pf - a.pf || a.name.localeCompare(b.name);
   const compareStandings = (a, b) => winRate(b) - winRate(a) || standingsTiebreaker(a, b);
@@ -100,7 +108,7 @@ async function startDashboard(snapshots, initialView) {
   }
 
   function projectedLineupTotal(week, teamId) {
-    const savedLineups = lineupSnapshot?.season === data.season ? lineupSnapshot.weeks?.[week] : null;
+    const savedLineups = lineupWeeks?.[week];
     const lineup = savedLineups?.source === 'projected' ? savedLineups.teams?.[teamId] : null;
     const occupied = lineup?.filter(slot => slot.playerId && slot.playerId !== '0');
     if (!lineup?.length || (occupied.length && !occupied.some(slot => Number.isFinite(slot.projectedPoints)))) {
@@ -114,7 +122,7 @@ async function startDashboard(snapshots, initialView) {
     .filter(game => Number(game.week) === currentWeek && game.status === 'complete')
     .flatMap(game => [game.home, game.away]));
   const finalizedTeams = new Set((currentInputs?.matchups ?? [])
-    .filter(({starters}) => starters?.length === 9 && starters.every(id =>
+    .filter(({starters}) => starters?.length === lineupSlotLabels.length && starters.every(id =>
       id && id !== '0' && completedNflTeams.has(data.medianModel.players[id]?.[0])))
     .map(matchup => matchup.roster_id));
   const scoreFinalized = (week, id) => week <= data.medianModel.lastScored ||
@@ -152,9 +160,8 @@ async function startDashboard(snapshots, initialView) {
         : '<p>No matchups available for this selection.</p>'}${medianPanel()}`;
   }
 
-  // Fixed fits from fit_variance.py. Coefficients are in squared PPR points.
+  // Fit player scoring variance from historical RotoWire projection errors, in squared PPR points.
   const varianceCurves = {QB:[36.4098,1.5083], RB:[.6254,4.2599], WR:[6.8302,3.8625], TE:[2.4392,4.1774]};
-  const medianTrialCount = 10_000;
   const medianForecasts = new Map();
 
   function medianPanel() {
@@ -183,31 +190,6 @@ async function startDashboard(snapshots, initialView) {
       <p>${formulas}</p></section>`;
   }
 
-  function sampleMedian(lineups) {
-    const results = new Map(lineups.map(team => [team.id, {score:0, median:0, win:0}]));
-    const trials = lineups.some(team => team.players.length) ? medianTrialCount : 1;
-    for (let trial = 0; trial < trials; trial++) {
-      const scores = lineups.map(team => {
-        const score = team.players.reduce((total, player) => total + player.mean + player.sd * normalDraw(), team.fixed);
-        return {id:team.id, score:Math.round(score * 100)};
-      }).sort((a,b) => a.score - b.score);
-      const middle = scores.length / 2;
-      scores.forEach(({id, score}, index) => {
-        const otherMedian = scores[index < middle ? middle : middle - 1].score;
-        const result = results.get(id);
-        result.score += score;
-        result.median += otherMedian;
-        result.win += score === otherMedian ? .5 : Number(score > otherMedian);
-      });
-    }
-    for (const result of results.values()) {
-      result.score /= 100 * trials;
-      result.median /= 100 * trials;
-      result.win /= trials;
-    }
-    return {teams:results};
-  }
-
   function loadMedian(week) {
     const {inputs, lastScored, players} = data.medianModel;
     const validate = lineups => {
@@ -228,7 +210,7 @@ async function startDashboard(snapshots, initialView) {
     const games = new Map(schedule.filter(game => Number(game.week) === week).map(game => [String(game.game_id), game]));
     if (!games.size) throw Error('The NFL schedule is unavailable for this week.');
     const final = [...games.values()].every(game => game.status === 'complete');
-    const projections = projectionSnapshot?.season === data.season ? projectionSnapshot.weeks?.[week] : null;
+    const projections = projectionWeeks?.[week];
     if (!final && !Array.isArray(projections)) {
       throw Error('RotoWire projections are unavailable for this week in the published snapshot.');
     }
@@ -242,8 +224,7 @@ async function startDashboard(snapshots, initialView) {
     const lineups = matchups.filter(row => row.matchup_id != null).map(row => {
       const team = {id:row.roster_id, fixed:row.custom_points ?? row.points, players:[]};
       if (row.custom_points != null || final) return team;
-      const savedLineup = lineupSnapshot?.season === data.season
-        ? lineupSnapshot.weeks?.[week]?.teams?.[row.roster_id] : null;
+      const savedLineup = lineupWeeks?.[week]?.teams?.[row.roster_id];
       if (!savedLineup?.length) throw Error(`Saved lineup unavailable for ${name(team.id)}.`);
       const gameForPlayer = id =>
         games.get(String(projectionByPlayer.get(id)?.game_id)) ?? gameByTeam.get(players[id]?.[0]);
@@ -273,17 +254,15 @@ async function startDashboard(snapshots, initialView) {
   }
 
   function lineupSlotAverages(teamId) {
-    const savedWeeks = lineupSnapshot?.season === data.season ? lineupSnapshot.weeks : null;
-    const playedWeeks = Object.entries(savedWeeks ?? {})
-      .filter(([week, snapshot]) => Number(week) <= 14 && snapshot.source === 'played')
+    const playedWeeks = Object.entries(lineupWeeks ?? {})
+      .filter(([week, snapshot]) => Number(week) <= lastRegularSeasonWeek && snapshot.source === 'played')
       .map(([, snapshot]) => snapshot.teams);
     if (!playedWeeks.length) return '<p>No completed lineup scores available.</p>';
 
     const leagueTeams = [...teams.values()];
     const contenders = leagueTeams.filter(team => winRate(team) > 0.2);
     const mean = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
-    const slotLabels = ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'TE', 'FLEX1', 'FLEX2', 'SUPERFLEX'];
-    const rows = slotLabels.map((label, index) => {
+    const rows = lineupSlotLabels.map((label, index) => {
       const averages = new Map(leagueTeams.map(team => {
         const scores = playedWeeks.map(week => week?.[team.id])
           .filter(lineup => lineup?.some(slot => Number.isFinite(slot.actualPoints)))
@@ -304,14 +283,13 @@ async function startDashboard(snapshots, initialView) {
       return `<tr><th scope="row">${label}</th><td class="slot-average ${tone}${intensity}">${points(average, 1)}</td>
         <td>${points(contendingAverage, 1)}</td><td>${points(leagueAverage, 1)}</td></tr>`;
     });
-    return table(['Slot', 'AVG', 'Contending AVG', 'League AVG'].map(label => `<th scope="col">${label}</th>`), rows);
+    return table(columnHeaders(['Slot', 'AVG', 'Contending AVG', 'League AVG']), rows);
   }
 
   function leagueTeams() {
     const team = teams.get(state.team);
     const showLineups = state.teamSection === 'Lineups';
-    const savedLineup = showLineups && lineupSnapshot?.season === data.season
-      ? lineupSnapshot.weeks?.[state.lineupWeek]?.teams?.[state.team] : null;
+    const savedLineup = showLineups ? lineupWeeks?.[state.lineupWeek]?.teams?.[state.team] : null;
     const bench = team.bench.filter(player => !player.reserveTag && !player.unavailable && player.average > 8);
     const reserve = team.bench.filter(player => player.reserveTag);
     const picks = data.picks.filter(pick => pick.owner === state.team)
@@ -352,7 +330,7 @@ async function startDashboard(snapshots, initialView) {
         <section class="card"><h3>Average Points by Position</h3>${lineupSlotAverages(state.team)}</section>
         <p>A team is regarded as 'contending' if their win percentage is above 20%.</p>`
       : `<p>View weekly lineups as they are recorded internally by our system.</p>
-      ${savedLineup?.length ? table(['Slot', 'Player', 'PTS'].map(label => `<th scope="col">${label}</th>`),
+      ${savedLineup?.length ? table(columnHeaders(['Slot', 'Player', 'PTS']),
         savedLineup.map(({slot, playerId, actualPoints, pregamePoints}) => {
           const player = playerId && playerId !== '0' ? lineupSnapshot.players?.[playerId] ?? playerId : '—';
           return `<tr><td>${html(slot)}</td><td>${html(player)}</td><td>
@@ -394,19 +372,15 @@ async function startDashboard(snapshots, initialView) {
     board.toggleAttribute('data-fade-right', board.scrollLeft + board.clientWidth < board.scrollWidth - 1);
   }
 
-  const trialCount = 50_000;
-  const postseasonsPerTrial = 3;
-  const postseasonTrialCount = trialCount * postseasonsPerTrial;
-  let deviationPercent = 20;
+  let deviationPercent = defaultDeviationPercent;
   let playoffResults;
   let draftResults;
   let projectedPickOwner = 'all';
-  let draftDeviation = 20;
+  let draftDeviation = defaultDeviationPercent;
   let finishView = 'regular';
   const scoreOverrides = new Map();
   let overridesEnabled = false;
   let overridesOpen = false;
-  const normalDraw = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
 
   function playoffModelReady() {
     const model = data.playoffModel;
@@ -429,128 +403,27 @@ async function startDashboard(snapshots, initialView) {
     return projectedLineupTotal(week, teamId);
   }
 
-  function bracketFinish(seeds, winner, loserAdvances, draftOrder = false) {
-    const [bye1, bye2, seed3, seed4, seed5, seed6] = seeds;
-    const advancing = (a, b, round) => {
-      const winningSeed = winner(a, b, round);
-      return loserAdvances ? a + b - winningSeed : winningSeed;
-    };
-    const advance36 = advancing(seed3, seed6, 0);
-    const advance45 = advancing(seed4, seed5, 0);
-    const exit36 = seed3 + seed6 - advance36;
-    const exit45 = seed4 + seed5 - advance45;
-    const finalist1 = advancing(bye1, advance45, 1);
-    const finalist2 = advancing(bye2, advance36, 1);
-    const exitSemi1 = bye1 + advance45 - finalist1;
-    const exitSemi2 = bye2 + advance36 - finalist2;
-    const finalWinner = winner(finalist1, finalist2, 2);
-    if (draftOrder) {
-      return [finalWinner, finalist1 + finalist2 - finalWinner,
-        Math.min(exitSemi1, exitSemi2), Math.max(exitSemi1, exitSemi2),
-        Math.min(exit36, exit45), Math.max(exit36, exit45)];
-    }
-    const thirdGameWinner = winner(exitSemi1, exitSemi2, 2);
-    const fifthGameWinner = winner(exit36, exit45, 1);
-    const finalLoser = finalist1 + finalist2 - finalWinner;
-    const thirdGameLoser = exitSemi1 + exitSemi2 - thirdGameWinner;
-    const fifthGameLoser = exit36 + exit45 - fifthGameWinner;
-    return loserAdvances
-      ? [fifthGameWinner, fifthGameLoser, thirdGameWinner, thirdGameLoser, finalWinner, finalLoser]
-      : [finalWinner, finalLoser, thirdGameWinner, thirdGameLoser, fifthGameWinner, fifthGameLoser];
-  }
-
   function simulatePlayoffs(draftOrder = false) {
     const deviation = draftOrder ? draftDeviation : deviationPercent;
     const useOverrides = !draftOrder && overridesEnabled;
-    const model = data.playoffModel;
-    const counts = new Map(data.teams.map(team => [team.id, {
-      id:team.id, champion:0, bye:0, qualified:0, winRate:0,
-      finishes:Array(teams.size).fill(0), postseasonFinishes:Array(teams.size).fill(0),
-    }]));
-    const k = deviation / 100;
-    const weeklyGames = model.schedule.map((games, index) => {
+    const {schedule, medianGame} = data.playoffModel;
+    // Resolve projections and any fixed scores once before running the trials.
+    const weeklyGames = schedule.map((games, index) => {
       const week = data.medianModel.lastScored + 1 + index;
       return games.map(game => game.map(id => {
         const mean = playoffMean(week, id);
         const finalized = scoreFinalized(week, id);
         const override = useOverrides && !finalized ? scoreOverrides.get(`${week}:${id}`) : undefined;
-        return {id, mean, fixed: override ?? (finalized ? Math.round(mean * 100) : undefined)};
+        return {id, mean, fixed:override ?? (finalized ? Math.round(mean * 100) : undefined)};
       }));
     });
     const playoffMeans = Array.from({length:3}, (_, round) => new Map(data.teams.map(team =>
       [team.id, playoffMean(data.medianModel.playoffStart + round, team.id)])));
-    const remainingGames = model.schedule.length * (model.medianGame ? 2 : 1);
-    const cutoffs = {playoff:0, bye:0};
-    function draw(mean) {
-      return Math.max(0, Math.round((mean + normalDraw() * k * mean) * 100));
-    }
-
-    for (let trial = 0; trial < trialCount; trial++) {
-      const standings = new Map(data.teams.map(team => [team.id, {
-        id:team.id, effectiveWins:team.wins + team.ties / 2,
-        games:team.wins + team.losses + team.ties + remainingGames,
-        pf:Math.round(team.pf * 100),
-        tiebreak:undefined,
-      }]));
-      for (const week of weeklyGames) {
-        const scores = [];
-        for (const [home, away] of week) {
-          const a = standings.get(home.id), b = standings.get(away.id);
-          const x = home.fixed ?? draw(home.mean), y = away.fixed ?? draw(away.mean);
-          a.effectiveWins += x === y ? .5 : Number(x > y);
-          b.effectiveWins += x === y ? .5 : Number(y > x);
-          a.pf += x;
-          b.pf += y;
-          scores.push({team:a, score:x}, {team:b, score:y});
-        }
-        if (model.medianGame) {
-          scores.sort((a,b) => a.score - b.score);
-          const middle = scores.length / 2;
-          const median = (scores[middle - 1].score + scores[middle].score) / 2;
-          scores.forEach(({team, score}) => {
-            team.effectiveWins += score === median ? .5 : Number(score > median);
-          });
-        }
-      }
-      const ranked = [...standings.values()];
-      for (const team of ranked) {
-        team.winRate = team.effectiveWins / team.games;
-        counts.get(team.id).winRate += team.winRate;
-      }
-      ranked.sort((a,b) => b.winRate - a.winRate || b.pf - a.pf ||
-        (a.tiebreak ??= Math.random()) - (b.tiebreak ??= Math.random()));
-      ranked.forEach((team, position) => counts.get(team.id).finishes[position]++);
-      const seeds = ranked.slice(0, 6);
-      cutoffs.playoff += seeds[5].winRate;
-      cutoffs.bye += seeds[1].winRate;
-      seeds.forEach(({id}, seed) => {
-        counts.get(id).qualified++;
-        if (seed < 2) counts.get(id).bye++;
-      });
-      const winner = (a, b, round) => {
-        const means = playoffMeans[round];
-        const difference = draw(means.get(ranked[a].id)) - draw(means.get(ranked[b].id));
-        return difference === 0 ? Math.min(a,b) : difference > 0 ? a : b;
-      };
-      for (let postseasonTrial = 0; postseasonTrial < postseasonsPerTrial; postseasonTrial++) {
-        const topFinish = bracketFinish([0, 1, 2, 3, 4, 5], winner, false, draftOrder);
-        if (draftOrder) {
-          topFinish.concat([6, 7, 8, 9, 10, 11]).forEach((seed, position) => {
-            counts.get(ranked[seed].id).postseasonFinishes[ranked.length - 1 - position]++;
-          });
-          continue;
-        }
-        const bottomFinish = bracketFinish([11, 10, 9, 8, 7, 6], winner, true);
-        counts.get(ranked[topFinish[0]].id).champion++;
-        topFinish.concat(bottomFinish).forEach((seed, position) => {
-          counts.get(ranked[seed].id).postseasonFinishes[position]++;
-        });
-      }
-    }
-    const {wins, losses, ties} = data.teams[0];
-    const games = wins + losses + ties + remainingGames;
-    return {rows:[...teams.values()].sort(compareStandings).map(team => counts.get(team.id)), cutoffs, games,
-      deviationPercent:deviation};
+    const {counts, ...results} = simulateSeason({
+      leagueTeams: data.teams, weeklyGames, playoffMeans, medianGame, deviation, draftOrder,
+    });
+    const rows = [...teams.values()].sort(compareStandings).map(team => counts.get(team.id));
+    return {...results, rows};
   }
 
   const percent = (count, total = trialCount) => `${(100 * count / total).toFixed(1)}%`;
@@ -567,25 +440,40 @@ async function startDashboard(snapshots, initialView) {
       </div>`;
   }
 
-  function finishGrid(rows, field, total) {
-    return `<div class="finish-scroll"><div class="finish-grid" style="grid-template-columns:11rem repeat(${teams.size}, 3.5rem)">
-          <div></div>${Array.from({length:teams.size}, (_, index) => `<div class="finish-position">${index + 1}</div>`).join('')}
-          ${rows.map(row => {
-            const finishes = row[field];
-            const mostLikely = finishes.indexOf(Math.max(...finishes));
-            return `<div class="finish-team">${html(name(row.id))}</div>${finishes.map((count, index) => {
-            const intensity = Math.sqrt(count / total);
-            const color = [48, 55, 53].map((channel, i) =>
-              Math.round(channel + ([214, 248, 134][i] - channel) * intensity));
-            const label = html(`${name(row.id)}, position ${index + 1}, ${percent(count, total)}`);
-            const emphasis = index === mostLikely ? 'color:#000;font-weight:700' : 'color:#fff';
-            return `<div class="finish-cell" title="${label}" style="background-color:rgb(${color.join(',')});${emphasis}">${percent(count, total)}</div>`;
-          }).join('')}`;
-          }).join('')}
-        </div></div>`;
-  }
+  const finishDistributions = {
+    regular: {field:'finishes', total:trialCount},
+    postseason: {field:'postseasonFinishes', total:postseasonTrialCount},
+  };
 
-  state.pickCoverage = 80;
+  function probabilityHeatmap({title, rows, distribution: {field, total}, controls = ''}) {
+    const heading = `<h3>${html(title)}</h3>`;
+    const positions = Array.from({length:teams.size}, (_, index) =>
+      `<div class="finish-position">${index + 1}</div>`).join('');
+    const lowColor = [48, 55, 53];
+    const highColor = [214, 248, 134];
+    const heatRows = rows.map(row => {
+      const teamName = name(row.id);
+      const counts = row[field];
+      const mostLikely = counts.indexOf(Math.max(...counts));
+      const cells = counts.map((count, index) => {
+        // The square-root scale makes low probabilities easier to distinguish by color.
+        const intensity = Math.sqrt(count / total);
+        const color = lowColor.map((channel, i) =>
+          Math.round(channel + (highColor[i] - channel) * intensity));
+        const chance = percent(count, total);
+        const label = html(`${teamName}, position ${index + 1}, ${chance}`);
+        const emphasis = index === mostLikely ? 'color:#000;font-weight:700' : 'color:#fff';
+        return `<div class="finish-cell" title="${label}" style="background-color:rgb(${color.join(',')});${emphasis}">${chance}</div>`;
+      }).join('');
+      return `<div class="finish-team">${html(teamName)}</div>${cells}`;
+    }).join('');
+    return `<section class="analytics finish-heatmap">
+      ${controls ? `<div class="heading">${heading}${controls}</div>` : heading}
+      <div class="finish-scroll"><div class="finish-grid" style="grid-template-columns:11rem repeat(${teams.size}, 3.5rem)">
+        <div></div>${positions}${heatRows}
+      </div></div>
+    </section>`;
+  }
 
   function pickRangeEndpoint(counts, coverage, fromRight) {
     const tail = postseasonTrialCount * (100 - coverage);
@@ -650,8 +538,9 @@ async function startDashboard(snapshots, initialView) {
       <p>Simulate ${trialCount.toLocaleString()} regular seasons and ${postseasonsPerTrial} postseasons per season.</p></div></div>
       ${simulationControls(ready, draftDeviation, 'draft')}
       ${!ready ? '<p>Simulation requires a complete remaining schedule and lineup projections through Week 17.</p>'
-        : draftResults ? `${projectedOwnershipBoard(year)}<section class="analytics finish-heatmap"><h3>Draft position probabilities</h3>
-          ${finishGrid(draftResults.rows, 'postseasonFinishes', postseasonTrialCount)}</section>` : ''}
+        : draftResults ? `${projectedOwnershipBoard(year)}${probabilityHeatmap({
+          title:'Draft position probabilities', rows:draftResults.rows, distribution:finishDistributions.postseason,
+        })}` : ''}
       </section>`;
   }
 
@@ -696,96 +585,16 @@ async function startDashboard(snapshots, initialView) {
       : playoffResults ? `<p>Results with k = ${playoffResults.deviationPercent}%.</p>
         ${simpleTable(['Team','Championship','Bye Qualification','Playoff Qualification','Expected Win Rate'],
         playoffResults.rows.map(row => [name(row.id), percent(row.champion, postseasonTrialCount), percent(row.bye), percent(row.qualified), percent(row.winRate)]))}
-        <section class="analytics finish-heatmap"><div class="heading"><h3>Finish probabilities</h3>
-          ${select('Season stage', 'finishView', [['regular','Regular season'], ['postseason','Postseason']], finishView)}
-        </div>
-        ${finishGrid(playoffResults.rows, finishView === 'postseason' ? 'postseasonFinishes' : 'finishes',
-          finishView === 'postseason' ? postseasonTrialCount : trialCount)}
-        </section>
+        ${probabilityHeatmap({
+          title:'Finish probabilities', rows:playoffResults.rows,
+          distribution:finishView === 'postseason' ? finishDistributions.postseason : finishDistributions.regular,
+          controls:select('Season stage', 'finishView', [['regular','Regular season'], ['postseason','Postseason']], finishView),
+        })}
         <section class="analytics"><dl class="metrics">
         <div class="card"><dt>Projected Playoff Cutoff</dt><dd>${cutoffRecord(playoffResults.cutoffs.playoff)}</dd></div>
         <div class="card"><dt>Projected Bye Cutoff</dt><dd>${cutoffRecord(playoffResults.cutoffs.bye)}</dd></div>
         </dl><p>Average records of the 6th and 2nd seeds across all trials. Ties count as half a win and half a loss.</p></section>`
         : '<p>Run the simulation to see estimated probabilities.</p>'}`;
-  }
-
-  const assetKey = name => name.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const playerKey = name => assetKey(name.replace(/\s+(?:Jr\.?|Sr\.?|II|III|IV|V)$/i, ''));
-  const ktcAssets = new Map((data.ktc?.assets ?? []).map(([name, position, age, value]) =>
-    [assetKey(name), {position, age:age > 0 ? age : null, value}]));
-  const playerAliases = new Map([['kennygainwell','kennethgainwell'], ['chigokonkwo','chigoziemokonkwo']]);
-  const ktcPlayers = new Map();
-  for (const [name, position] of data.ktc?.assets ?? []) {
-    if (position === 'RDP') continue;
-    const key = playerKey(name);
-    ktcPlayers.set(key, ktcPlayers.has(key) ? null : ktcAssets.get(assetKey(name)));
-  }
-  const projectedDraftOrder = [...teams.values()].sort(compareStandings).reverse();
-  const teamValues = projectedDraftOrder.map(team => {
-    const assets = [...team.lineup.map(row => row.player).filter(Boolean), ...team.bench].map(player => {
-      const key = playerKey(player.name);
-      const match = ktcAssets.get(assetKey(player.name)) ?? ktcPlayers.get(playerAliases.get(key) ?? key);
-      return {name:player.name, type:match?.position ?? 'Player', age:match?.age, value:match?.value};
-    });
-    for (const pick of data.picks.filter(pick => pick.owner === team.id)) {
-      const slot = projectedDraftOrder.findIndex(original => original.id === pick.original);
-      const tier = pick.year === data.season + 1 && slot >= 0 ?
-        ['Early','Mid','Late'][Math.floor(3 * slot / projectedDraftOrder.length)] : 'Mid';
-      const round = ['1st','2nd','3rd','4th'][pick.round - 1] ?? `${pick.round}th`;
-      const match = ktcAssets.get(assetKey(`${pick.year} ${tier} ${round}`));
-      assets.push({name:`${pick.year} ${tier} ${round} · ${name(pick.original)}`, type:'Pick',
-        age:22 - (pick.year - data.season), value:match?.value});
-    }
-    assets.sort((a,b) => (b.value ?? -1) - (a.value ?? -1) || a.name.localeCompare(b.name));
-    const total = assets.reduce((sum, asset) => sum + (asset.value ?? 0), 0);
-    const aged = assets.filter(asset => asset.age != null && asset.value != null);
-    const ageWeight = aged.reduce((sum, asset) => sum + asset.value, 0);
-    const age = ageWeight ? aged.reduce((sum, asset) => sum + asset.age * asset.value, 0) / ageWeight : null;
-    return {id:team.id, assets, total, age, unvalued:assets.filter(asset => asset.value == null).length};
-  });
-
-  function valueChart(selected) {
-    const plotted = teamValues.filter(team => team.age != null);
-    if (!plotted.length) return '';
-    const minAge = Math.floor(Math.min(...plotted.map(team => team.age)) * 2) / 2;
-    const maxAge = Math.max(minAge + 1, Math.ceil(Math.max(...plotted.map(team => team.age)) * 2) / 2);
-    const maxValue = Math.max(...teamValues.map(team => team.total));
-    const x = percent => 95 + 640 * (percent - 50) / 50;
-    const y = age => 305 - 275 * (age - minAge) / (maxAge - minAge);
-    const grid = Array.from({length:6}, (_, index) => {
-      const age = minAge + (maxAge - minAge) * index / 5;
-      const percent = 50 + index * 10;
-      return `<line x1="${x(percent)}" y1="30" x2="${x(percent)}" y2="305"/><text x="${x(percent)}" y="330" text-anchor="middle">${percent}%</text>
-        <line x1="95" y1="${y(age)}" x2="735" y2="${y(age)}"/><text x="85" y="${y(age) + 5}" text-anchor="end">${points(age, 2)}</text>`;
-    }).join('');
-    return `<svg class="value-chart" viewBox="0 0 770 375" role="group" aria-label="Team value by value-weighted age">
-      ${grid}<text x="415" y="360" text-anchor="middle">KTC value relative to league leader</text>
-      <text transform="translate(20 168) rotate(-90)" text-anchor="middle">Value-weighted age</text>
-      ${plotted.filter(team => team.total >= maxValue / 2).map(team => {
-        const percent = 100 * team.total / maxValue;
-        const description = html(`${name(team.id)}, ${points(percent, 1)}% of leader’s value, weighted age ${points(team.age, 2)}`);
-        return `<circle role="button" tabindex="0" data-value-team="${team.id}" aria-pressed="${team.id === selected}"
-          aria-label="${description}" cx="${x(percent)}" cy="${y(team.age)}" r="${team.id === selected ? 9 : 7}"><title>${description}</title></circle>`;
-      }).join('')}</svg>`;
-  }
-
-  function tradeValues() {
-    if (!data.ktc) return '<h2>Trade Values</h2><p>The KTC snapshot is unavailable.</p>';
-    const selected = state.valueTeam ?? state.team;
-    const team = teamValues.find(team => team.id === selected);
-    return `<div class="heading"><div><h2>Trade Values</h2>
-      <p>Crowdsourced Superflex values from <a href="https://keeptradecut.com/dynasty-rankings">KeepTradeCut</a>,
-      captured ${new Date(data.ktc.updated).toLocaleDateString()}.</p></div>
-      ${select('Team','valueTeam',teamOptions,selected)}</div>
-      ${valueChart(selected)}
-      <div class="heading"><div><h3>${html(name(selected))}</h3>
-      <p>${points(team.total, 0)} total KTC value · ${points(team.age, 2)} value-weighted age
-      · ${team.unvalued} assets without a KTC match</p></div></div>
-      ${simpleTable(['Asset','Type','Age','KTC value'], team.assets.map(asset =>
-        [asset.name, asset.type, points(asset.age, asset.type === 'Pick' ? 0 : 1), points(asset.value, 0)]))}
-      <p>Next-draft pick tiers use projected draft order. Later picks use the mid-round value.
-      Pick ages start at 21 for the next draft and drop by one per year.
-      Total value sums matched assets. Weighted age uses matched values with a known age.</p>`;
   }
 
   function methodology() {
@@ -833,7 +642,7 @@ Both first-round winners ──► Play for 7th / 8th</pre>
       if (tab.dataset.view === state.view) tab.setAttribute('aria-current', 'page');
       else tab.removeAttribute('aria-current');
     });
-    content.innerHTML = {standings, matchups, teams:leagueTeams, draft, playoffs, methodology, values:tradeValues}[state.view]();
+    content.innerHTML = {standings, matchups, teams:leagueTeams, draft, playoffs, methodology}[state.view]();
     const board = content.querySelector('.draft-scroll');
     if (board) {
       updateDraftFade(board);
@@ -857,12 +666,6 @@ Both first-round winners ──► Play for 7th / 8th</pre>
     render();
   }, listenerOptions));
   content.addEventListener('click', async event => {
-    const point = event.target.closest('[data-value-team]');
-    if (point) {
-      state.valueTeam = Number(point.dataset.valueTeam);
-      render(`[data-value-team="${state.valueTeam}"]`);
-      return;
-    }
     const button = event.target.closest('button');
     if (!button) return;
     if (button.dataset.teamSection) {
@@ -905,12 +708,6 @@ Both first-round winners ──► Play for 7th / 8th</pre>
       state.view = 'teams';
       render('[data-field="team"]');
     }
-  }, listenerOptions);
-  content.addEventListener('keydown', event => {
-    if (!event.target.matches('[data-value-team]') || !['Enter', ' '].includes(event.key)) return;
-    event.preventDefault();
-    state.valueTeam = Number(event.target.dataset.valueTeam);
-    render(`[data-value-team="${state.valueTeam}"]`);
   }, listenerOptions);
   content.addEventListener('input', event => {
     const {scoreOverride} = event.target.dataset;
@@ -973,7 +770,7 @@ async function initializeDashboard() {
     console.warn('Could not restore this tab’s Sleeper sync.', error);
   }
   const useCached = Date.parse(cached?.league?.updated) > Date.parse(published.league.updated);
-  await startDashboard(useCached ? cached : published);
+  startDashboard(useCached ? cached : published);
   if (useCached) syncStatus.textContent = 'Synced for this tab.';
   syncButton.disabled = false;
   syncButton.addEventListener('click', async () => {
@@ -983,7 +780,7 @@ async function initializeDashboard() {
       const payload = await syncSleeper();
       const snapshots = JSON.parse(payload);
       const view = document.querySelector('[data-view][aria-current="page"]')?.dataset.view;
-      await startDashboard(snapshots, view);
+      startDashboard(snapshots, view);
       try {
         sessionStorage.setItem(sessionSnapshotKey, payload);
       } catch (error) {

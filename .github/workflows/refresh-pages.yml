@@ -38,11 +38,8 @@ jobs:
       - name: Prepare static site
         run: |
           mkdir -p _site/data
-          cp index.html styles.css dashboard.js sync-worker.js build.py _site/
+          cp index.html styles.css dashboard.js simulations.js sync-worker.js build.py _site/
           cp data/sleeper.json data/projections.json data/lineups.json _site/data/
-          if [ -f ktc_snapshot.json ]; then
-            cp ktc_snapshot.json _site/
-          fi
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site

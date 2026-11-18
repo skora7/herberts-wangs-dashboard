@@ -7,6 +7,9 @@ from statistics import variance
 
 LEAGUE_ID = "1312004884693807104"
 SLEEPER_USERNAME = "skora"
+SLEEPER_API_URL = "https://api.sleeper.app"
+REQUEST_TIMEOUT_SECONDS = 30
+MAX_CONCURRENT_REQUESTS = 6
 ROOT = Path(__file__).resolve().parent
 LINEUP_SLOTS = (
     ("QB", ("QB",)),
@@ -24,7 +27,7 @@ LINEUP_SLOTS = (
 def fetch(path):
     from urllib.request import urlopen
 
-    with urlopen(f"https://api.sleeper.app/{path}", timeout=30) as response:
+    with urlopen(f"{SLEEPER_API_URL}/{path}", timeout=REQUEST_TIMEOUT_SECONDS) as response:
         return json.load(response)
 
 
@@ -37,13 +40,18 @@ def matchup_points(row):
     return override if override is not None else row.get("points")
 
 
-def finished_starter_points(row, players, finished_teams):
+def starter_scores(row):
     starter_points = row.get("starters_points") or []
     player_points = row.get("players_points") or {}
+    for index, player_id in enumerate(row.get("starters") or []):
+        points = starter_points[index] if index < len(starter_points) else None
+        yield player_id, points if points is not None else player_points.get(player_id)
+
+
+def finished_starter_points(row, players, finished_teams):
     return sum(
-        (starter_points[index] if index < len(starter_points) and starter_points[index] is not None
-         else player_points.get(player_id)) or 0
-        for index, player_id in enumerate(row.get("starters") or [])
+        points or 0
+        for player_id, points in starter_scores(row)
         if players.get(player_id, {}).get("team") in finished_teams
     )
 
@@ -56,6 +64,7 @@ def current_league():
     if latest_season <= first_season:
         return league
 
+    # Follow Sleeper's renewal links for this league across seasons.
     user, = yield (f"v1/user/{SLEEPER_USERNAME}",)
     user_id = user["user_id"]
     for season in range(first_season + 1, latest_season + 1):
@@ -68,6 +77,10 @@ def current_league():
     return league
 
 
+def fantasy_positions(player):
+    return player.get("fantasy_positions") or [player.get("position")]
+
+
 def build_roster(roster, players, season_stats):
     unavailable_statuses = {"IR", "PUP", "SUS", "SUSPENDED"}
     ranked = []
@@ -75,7 +88,7 @@ def build_roster(roster, players, season_stats):
         player = players.get(player_id, {})
         stats = season_stats.get(player_id, {})
         position = player.get("position")
-        positions = player.get("fantasy_positions") or [position]
+        positions = fantasy_positions(player)
         total = stats.get("pts_ppr")
         games = stats.get("gp") or 0
         rank = stats.get("pos_rank_ppr")
@@ -124,15 +137,12 @@ def build_weekly_lineups(rosters, matchups, players, projections, scoring, actua
     lineups = {}
     for roster_id, roster in rosters.items():
         matchup = matchup_by_team.get(roster_id, {})
-        starter_points = matchup.get("starters_points") or []
-        player_points = matchup.get("players_points") or {}
-        actual_points = {}
-        for index, player_id in enumerate(matchup.get("starters") or []):
+        actual_points = {
+            player_id: points for player_id, points in starter_scores(matchup)
             if player_id and player_id != "0" and (
                 played or players.get(player_id, {}).get("team") in finished_teams
-            ):
-                actual = starter_points[index] if index < len(starter_points) else None
-                actual_points[player_id] = actual if actual is not None else player_points.get(player_id)
+            )
+        }
 
         if played:
             original = [pid if pid and pid != "0" else None
@@ -144,9 +154,7 @@ def build_weekly_lineups(rosters, matchups, players, projections, scoring, actua
             ordered = []
             for _, eligible in LINEUP_SLOTS:
                 index = next((i for i, pid in enumerate(remaining)
-                              if any(pos in eligible for pos in (
-                                  players.get(pid, {}).get("fantasy_positions")
-                                  or [players.get(pid, {}).get("position")]))), None)
+                              if any(pos in eligible for pos in fantasy_positions(players.get(pid, {})))), None)
                 ordered.append(remaining.pop(index) if index is not None else None)
             # Preserve every actual starter if positions are unknown or greedy assignment gets stuck.
             if remaining or tuple(actual_slots) != tuple(slot for slot, _ in LINEUP_SLOTS):
@@ -169,8 +177,7 @@ def build_weekly_lineups(rosters, matchups, players, projections, scoring, actua
             player = players.get(player_id, {})
             points = projected_points.get(player_id, 0)
             if points > 0 and player.get("team") not in locked_teams:
-                positions = player.get("fantasy_positions") or [player.get("position")]
-                candidates.append((player_id, positions, points))
+                candidates.append((player_id, fantasy_positions(player), points))
         candidates.sort(key=lambda player: (-player[2], player[0]))
         assigned = {}
 
@@ -206,7 +213,7 @@ def build_weekly_lineups(rosters, matchups, players, projections, scoring, actua
 
 
 def build_snapshots():
-    """Yield batches of Sleeper paths and receive their JSON responses in order."""
+    """Build snapshots from ordered batches fetched by the CLI or browser worker."""
     league = yield from current_league()
     prefix = f"v1/league/{league['league_id']}"
     season = int(league["season"])
@@ -332,6 +339,7 @@ def build_snapshots():
                     projection_players[week] = rostered | (starters - {"0", None})
                 median_inputs[week] = {"matchups": matchups, "schedule": games}
 
+    # Pregame projections also support comparisons with actual historical starters.
     projection_weeks = {}
     played_weeks = {week for week in results if isinstance(week, int)
                     and (week < last_week or (week == last_week and current_week_finished))}
@@ -413,7 +421,7 @@ def load_league():
         if len(paths) == 1:
             responses = [fetch(paths[0])]
         else:
-            with ThreadPoolExecutor(max_workers=6) as pool:
+            with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS) as pool:
                 responses = list(pool.map(fetch, paths))
         try:
             paths = builder.send(responses)
@@ -428,6 +436,7 @@ def main():
     data_dir.mkdir(exist_ok=True)
     staged = {}
     try:
+        # Serialize each snapshot before replacing any published file.
         for filename, data in snapshots.items():
             output = data_dir / filename
             temporary = output.with_suffix(".tmp")

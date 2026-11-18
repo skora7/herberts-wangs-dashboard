@@ -92,11 +92,6 @@
     .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,205px),1fr)); gap:var(--metrics-gap); margin:0; }
     .metrics dt { color:var(--muted); }
     .metrics dd { margin:2px 0 0; font-size:1.6rem; font-weight:700; font-variant-numeric:tabular-nums; }
-    .value-chart { display:block; width:100%; max-width:850px; height:auto; margin:auto; }
-    .value-chart text { fill:var(--muted); font-size:14px; }
-    .value-chart line { stroke:var(--line); }
-    .value-chart circle { fill:var(--lime); stroke:var(--bg); stroke-width:2; cursor:pointer; opacity:.7; }
-    .value-chart circle:is(:hover, :focus-visible, [aria-pressed="true"]) { opacity:1; stroke:#fff; }
     .draft-projections { margin-top:96px; }
     .draft-scroll { overflow-x:auto; padding-bottom:10px; scrollbar-width:thin; scrollbar-color:#52645a transparent; }
     .draft-board { display:grid; grid-template-columns:repeat(var(--teams), minmax(78px, 1fr)); gap:8px; }

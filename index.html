@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dynasty Dashboard</title>
-  <link rel="stylesheet" href="./styles.css?v=draft-pick-ranges">
+  <link rel="stylesheet" href="./styles.css?v=shared-simulations">
 </head>
 <body>
 <main>
@@ -24,11 +24,10 @@
     <button data-view="draft">Draft</button>
     <button data-view="playoffs">Playoffs</button>
     <button data-view="methodology">Methodology</button>
-    <button data-view="values" hidden>Trade Values</button>
   </nav>
   <section id="content" aria-label="Dashboard data"></section>
   <footer id="updated"></footer>
 </main>
-<script src="./dashboard.js?v=data-directory" defer></script>
+<script type="module" src="./dashboard.js?v=shared-simulations"></script>
 </body>
 </html>
