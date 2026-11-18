@@ -30,15 +30,16 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add sleeper.json projections.json lineups.json
+          git add data/sleeper.json data/projections.json data/lineups.json
           if ! git diff --cached --quiet; then
             git commit -m "Refresh dashboard snapshots"
             git push origin "HEAD:${GITHUB_REF}"
           fi
       - name: Prepare static site
         run: |
-          mkdir -p _site
-          cp index.html styles.css dashboard.js sleeper.json projections.json lineups.json _site/
+          mkdir -p _site/data
+          cp index.html styles.css dashboard.js sync-worker.js build.py _site/
+          cp data/sleeper.json data/projections.json data/lineups.json _site/data/
           if [ -f ktc_snapshot.json ]; then
             cp ktc_snapshot.json _site/
           fi
