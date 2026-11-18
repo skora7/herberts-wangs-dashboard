@@ -1,11 +1,9 @@
 """Build a static Dynasty Dashboard from Sleeper's read-only API."""
 
 import json
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from statistics import variance
-from urllib.request import urlopen
 
 LEAGUE_ID = "1312004884693807104"
 SLEEPER_USERNAME = "skora"
@@ -24,6 +22,8 @@ LINEUP_SLOTS = (
 
 
 def fetch(path):
+    from urllib.request import urlopen
+
     with urlopen(f"https://api.sleeper.app/{path}", timeout=30) as response:
         return json.load(response)
 
@@ -49,16 +49,17 @@ def finished_starter_points(row, players, finished_teams):
 
 
 def current_league():
-    league = fetch(f"v1/league/{LEAGUE_ID}")
+    league, = yield (f"v1/league/{LEAGUE_ID}",)
     first_season = int(league["season"])
-    state = fetch("v1/state/nfl")
+    state, = yield ("v1/state/nfl",)
     latest_season = int(state.get("league_season") or state["season"])
     if latest_season <= first_season:
         return league
 
-    user_id = fetch(f"v1/user/{SLEEPER_USERNAME}")["user_id"]
+    user, = yield (f"v1/user/{SLEEPER_USERNAME}",)
+    user_id = user["user_id"]
     for season in range(first_season + 1, latest_season + 1):
-        leagues = fetch(f"v1/user/{user_id}/leagues/nfl/{season}")
+        leagues, = yield (f"v1/user/{user_id}/leagues/nfl/{season}",)
         successor = next((item for item in leagues
                           if item.get("previous_league_id") == league["league_id"]), None)
         if successor is None:
@@ -204,8 +205,9 @@ def build_weekly_lineups(rosters, matchups, players, projections, scoring, actua
     return lineups
 
 
-def load_league():
-    league = current_league()
+def build_snapshots():
+    """Yield batches of Sleeper paths and receive their JSON responses in order."""
+    league = yield from current_league()
     prefix = f"v1/league/{league['league_id']}"
     season = int(league["season"])
     league_settings = league["settings"]
@@ -222,8 +224,7 @@ def load_league():
         "stats": f"stats/nfl/{season}?season_type=regular",
         **{week: f"{prefix}/matchups/{week}" for week in matchup_weeks},
     }
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        results = dict(zip(requests, pool.map(fetch, requests.values())))
+    results = dict(zip(requests, (yield tuple(requests.values()))))
 
     owners = {user["user_id"]: user for user in results["users"]}
     players = results["players"]
@@ -267,7 +268,10 @@ def load_league():
 
     weeks = {}
     remaining = []
-    schedule = fetch(f"schedule/nfl/regular/{season}") if last_scored < last_week and last_week <= 17 else []
+    schedule_path = f"schedule/nfl/regular/{season}"
+    schedule = []
+    if last_scored < last_week <= 17:
+        schedule, = yield (schedule_path,)
     current_games = [game for game in schedule if int(game["week"]) == last_week]
     if last_scored < last_week <= 17 and not current_games:
         raise ValueError(f"Missing NFL schedule for week {last_week}")
@@ -311,7 +315,8 @@ def load_league():
     if median_game:
         forecast_weeks = [week for week in weeks if last_scored < week < playoff_start and week <= last_week]
         if forecast_weeks:
-            schedule = schedule or fetch(f"schedule/nfl/regular/{season}")
+            if not schedule:
+                schedule, = yield (schedule_path,)
             for week in forecast_weeks:
                 matchups = [
                     {key: row.get(key) for key in (
@@ -336,7 +341,7 @@ def load_league():
         player_ids = projection_players.get(week, set()) | historical_players.get(week, set())
         if not player_ids:
             continue
-        rows = fetch(f"projections/nfl/{season}/{week}?season_type=regular")
+        rows, = yield (f"projections/nfl/{season}/{week}?season_type=regular",)
         projection_weeks[week] = [
             {key: row.get(key) for key in (
                 "player_id", "company", "category", "game_id", "last_modified", "stats",
@@ -399,13 +404,32 @@ def load_league():
     }
 
 
+def load_league():
+    from concurrent.futures import ThreadPoolExecutor
+
+    builder = build_snapshots()
+    paths = next(builder)
+    while True:
+        if len(paths) == 1:
+            responses = [fetch(paths[0])]
+        else:
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                responses = list(pool.map(fetch, paths))
+        try:
+            paths = builder.send(responses)
+        except StopIteration as complete:
+            return complete.value
+
+
 def main():
     league, projections, lineups = load_league()
     snapshots = {"sleeper.json": league, "projections.json": projections, "lineups.json": lineups}
+    data_dir = ROOT / "data"
+    data_dir.mkdir(exist_ok=True)
     staged = {}
     try:
         for filename, data in snapshots.items():
-            output = ROOT / filename
+            output = data_dir / filename
             temporary = output.with_suffix(".tmp")
             staged[output] = temporary
             payload = json.dumps(data, ensure_ascii=False, allow_nan=False)

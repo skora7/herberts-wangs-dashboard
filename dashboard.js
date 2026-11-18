@@ -1,26 +1,41 @@
-const sessionSnapshotKey = 'dashboard-session-snapshots-v2';
+const sessionSnapshotKey = 'dashboard-builder-snapshots-v1';
+let dashboardEvents;
+
+async function syncSleeper() {
+  const worker = new Worker('./sync-worker.js', {type:'module'});
+  try {
+    return await new Promise((resolve, reject) => {
+      worker.onmessage = ({data}) => data.error ? reject(Error(data.error)) : resolve(data.payload);
+      worker.onerror = () => reject(Error('Could not start the browser snapshot builder.'));
+    });
+  } finally {
+    worker.terminate();
+  }
+}
 
 async function publishedSnapshots() {
-  const projectionRequest = fetch('./projections.json', {cache:'no-cache'})
+  const projectionRequest = fetch('./data/projections.json', {cache:'no-cache'})
     .then(response => response.ok ? response.json() : null)
     .catch(() => null);
-  const lineupRequest = fetch('./lineups.json', {cache:'no-cache'})
+  const lineupRequest = fetch('./data/lineups.json', {cache:'no-cache'})
     .then(response => response.ok ? response.json() : null)
     .catch(() => null);
-  const response = await fetch('./sleeper.json', {cache:'no-cache'});
+  const response = await fetch('./data/sleeper.json', {cache:'no-cache'});
   if (!response.ok) throw Error('Could not load the published Sleeper snapshot.');
   const data = await response.json();
   return {league: data, projections: await projectionRequest, lineups: await lineupRequest};
 }
 
-async function startDashboard() {
-  const cached = sessionStorage.getItem(sessionSnapshotKey);
-  const {league: data, projections: projectionSnapshot, lineups: lineupSnapshot} =
-    cached ? JSON.parse(cached) : await publishedSnapshots();
+async function startDashboard(snapshots, initialView) {
+  const {league: data, projections: projectionSnapshot, lineups: lineupSnapshot} = snapshots;
   if (!document.querySelector('[data-view="values"]').hidden) {
     const ktcResponse = await fetch('./ktc_snapshot.json');
     if (ktcResponse.ok) data.ktc = await ktcResponse.json();
   }
+  dashboardEvents?.abort();
+  dashboardEvents = new AbortController();
+  const {signal} = dashboardEvents;
+  const listenerOptions = {signal};
   const content = document.querySelector('#content');
   const tabs = [...document.querySelectorAll('[data-view]')];
   const teams = new Map(data.teams.map(team => [team.id, team]));
@@ -36,9 +51,7 @@ async function startDashboard() {
   const weeks = Object.keys(data.weeks).map(Number).sort((a, b) => b - a);
   const matchupWeeks = Array.from({length:14}, (_, index) => 14 - index);
   const currentWeek = data.currentWeek ?? weeks[0] ?? 1;
-  const syncedView = sessionStorage.getItem('dashboard-sync-view');
-  sessionStorage.removeItem('dashboard-sync-view');
-  const view = tabs.find(tab => !tab.hidden && tab.dataset.view === syncedView)?.dataset.view ?? 'standings';
+  const view = tabs.find(tab => !tab.hidden && tab.dataset.view === initialView)?.dataset.view ?? 'standings';
   const state = {view, sort:'record', direction:-1, week:Math.min(14, currentWeek), team:data.teams[0]?.id};
   const teamSections = ['Assets', 'Stats', 'Lineups'];
   state.teamSection = 'Assets';
@@ -784,6 +797,7 @@ async function startDashboard() {
           <li><strong>League data</strong> comes from Sleeper and includes team records, matchup schedules and scores, rosters, starting lineups, league scoring rules, and draft pick ownership.</li>
           <li><strong>Projection data</strong> comes from RotoWire through Sleeper’s projections feed. The dashboard applies the league’s scoring rules to the weekly player projections and uses them to build projected lineups and simulate outcomes.</li>
         </ul>
+        <p><strong>Sync Data</strong> rebuilds the same Sleeper snapshots as the scheduled refresh and shows the result in this tab.</p>
       </section>
       <section class="card analytics">
         <h3>Lineups</h3>
@@ -812,6 +826,7 @@ Both first-round winners ──► Play for 7th / 8th</pre>
   }
 
   function render(focusSelector) {
+    if (signal.aborted) return;
     const overrides = content.querySelector('.score-overrides');
     if (overrides) overridesOpen = overrides.open;
     tabs.forEach(tab => {
@@ -840,7 +855,7 @@ Both first-round winners ──► Play for 7th / 8th</pre>
   tabs.forEach(tab => tab.addEventListener('click', () => {
     state.view = tab.dataset.view;
     render();
-  }));
+  }, listenerOptions));
   content.addEventListener('click', async event => {
     const point = event.target.closest('[data-value-team]');
     if (point) {
@@ -872,6 +887,7 @@ Both first-round winners ──► Play for 7th / 8th</pre>
       spinner.hidden = false;
       try {
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        if (signal.aborted) return;
         const view = button.dataset.runPlayoffs;
         if (view === 'draft') draftResults = simulatePlayoffs(true);
         else playoffResults = simulatePlayoffs();
@@ -889,13 +905,13 @@ Both first-round winners ──► Play for 7th / 8th</pre>
       state.view = 'teams';
       render('[data-field="team"]');
     }
-  });
+  }, listenerOptions);
   content.addEventListener('keydown', event => {
     if (!event.target.matches('[data-value-team]') || !['Enter', ' '].includes(event.key)) return;
     event.preventDefault();
     state.valueTeam = Number(event.target.dataset.valueTeam);
     render(`[data-value-team="${state.valueTeam}"]`);
-  });
+  }, listenerOptions);
   content.addEventListener('input', event => {
     const {scoreOverride} = event.target.dataset;
     if (scoreOverride) {
@@ -917,7 +933,7 @@ Both first-round winners ──► Play for 7th / 8th</pre>
     if (state.view === 'draft') draftDeviation = deviation;
     else deviationPercent = deviation;
     content.querySelector('output[for="deviation-percent"]').value = `${deviation}%`;
-  });
+  }, listenerOptions);
   content.addEventListener('change', event => {
     if (event.target.matches('[data-enable-overrides]')) {
       overridesEnabled = event.target.checked;
@@ -938,40 +954,52 @@ Both first-round winners ──► Play for 7th / 8th</pre>
     }
     state[field] = Number(event.target.value);
     render(`[data-field="${field}"]`);
-  });
+  }, listenerOptions);
   window.addEventListener('resize', () => {
     const board = content.querySelector('.draft-scroll');
     if (board) updateDraftFade(board);
-  });
+  }, listenerOptions);
   render();
 }
-const syncButton = document.querySelector('#sync-data');
-const syncStatus = document.querySelector('#sync-status');
-syncButton.addEventListener('click', async () => {
-  syncButton.disabled = true;
-  syncStatus.textContent = 'Syncing…';
-  try {
-    const response = await fetch('./sync-session', {
-      method: 'POST',
-      headers: {'X-Dashboard-Sync': '1'},
-    });
-    if ([404, 405, 501].includes(response.status)) {
-      throw Error('Sync Data requires the local dashboard server.');
-    }
-    if (response.status === 409) throw Error('A sync is already running.');
-    if (!response.ok) throw Error('Sync failed. Try again.');
-    const snapshots = await response.json();
-    sessionStorage.setItem(sessionSnapshotKey, JSON.stringify(snapshots));
-    const activeTab = document.querySelector('[data-view][aria-current="page"]');
-    if (activeTab) sessionStorage.setItem('dashboard-sync-view', activeTab.dataset.view);
-    location.reload();
-  } catch (error) {
-    syncStatus.textContent = error.message;
-    syncButton.disabled = false;
-  }
-});
 
-startDashboard().catch(error => {
+async function initializeDashboard() {
+  const syncButton = document.querySelector('#sync-data');
+  const syncStatus = document.querySelector('#sync-status');
+  const published = await publishedSnapshots();
+  let cached;
+  try {
+    cached = JSON.parse(sessionStorage.getItem(sessionSnapshotKey));
+  } catch (error) {
+    console.warn('Could not restore this tab’s Sleeper sync.', error);
+  }
+  const useCached = Date.parse(cached?.league?.updated) > Date.parse(published.league.updated);
+  await startDashboard(useCached ? cached : published);
+  if (useCached) syncStatus.textContent = 'Synced for this tab.';
+  syncButton.disabled = false;
+  syncButton.addEventListener('click', async () => {
+    syncButton.disabled = true;
+    syncStatus.textContent = 'Syncing…';
+    try {
+      const payload = await syncSleeper();
+      const snapshots = JSON.parse(payload);
+      const view = document.querySelector('[data-view][aria-current="page"]')?.dataset.view;
+      await startDashboard(snapshots, view);
+      try {
+        sessionStorage.setItem(sessionSnapshotKey, payload);
+      } catch (error) {
+        console.warn('Could not save this tab’s Sleeper sync across reloads.', error);
+      }
+      syncStatus.textContent = 'Synced for this tab.';
+    } catch (error) {
+      console.error('Sleeper sync failed.', error);
+      syncStatus.textContent = 'Could not sync with Sleeper. Showing previous data.';
+    } finally {
+      syncButton.disabled = false;
+    }
+  });
+}
+
+initializeDashboard().catch(error => {
   console.error(error);
   document.querySelector('#content').textContent =
     'Could not load the Sleeper snapshot. Open the dashboard through GitHub Pages or a local web server.';
